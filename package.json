@@ -2,6 +2,7 @@
   "name": "textquest-mmorpg",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "server": "node scripts/free-port.js 3001 && npm run start --prefix server",
     "server:stop": "node scripts/free-port.js 3001",
