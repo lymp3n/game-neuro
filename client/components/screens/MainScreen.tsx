@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/context/GameContext';
-import { Card, RowItem, SectionTitle } from '@/components/ui';
+import { Card, PrimaryButton, RowItem, SectionTitle } from '@/components/ui';
+import { Popup } from '@/components/ui/Popup';
+import { gameIcon } from '@/utils/icons';
 import { colors, radius, shadow, spacing } from '@/theme/colors';
 
 export function MainScreen() {
   const { player, location, locations, items, openOverlay, send, chat } = useGame();
+  const [selectedMob, setSelectedMob] = useState<any>(null);
   if (!player || !location) return null;
 
   const isCity = location.type === 'city';
   const isDungeonEntry = location.type === 'dungeon_entry';
-  const movementBlocked = !!player.traveling || !!player.inBattle;
+  const inBattle = !!player.inBattle;
 
   return (
     <View style={styles.container}>
@@ -51,7 +54,7 @@ export function MainScreen() {
         </View>
 
         {player.traveling ? (
-          <TravelProgressBar traveling={player.traveling} locations={locations} />
+          <TravelProgressBar traveling={player.traveling} locations={locations} onCancel={() => send('cancel_travel')} />
         ) : null}
 
         <View style={styles.locCard}>
@@ -61,7 +64,7 @@ export function MainScreen() {
           </Text>
         </View>
 
-        <LocationExitsList disabled={movementBlocked} />
+        <LocationExitsList disabled={inBattle} />
 
         <Text style={styles.description}>{location.description}</Text>
 
@@ -117,13 +120,25 @@ export function MainScreen() {
             <SectionTitle title="Монстры" count={location.mobs.length} />
             <Card style={styles.listCard}>
               {location.mobs.map((mob: any) => (
-                <RowItem
+                <TouchableOpacity
                   key={mob.instanceId}
-                  icon="smart-toy"
-                  title={`${mob.name} Lv.${mob.level}`}
-                  actionLabel="Fight"
-                  onAction={() => send('start_battle', { mobInstanceId: mob.instanceId })}
-                />
+                  style={styles.mobRow}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedMob(mob)}
+                >
+                  <View style={styles.mobAvatar}>
+                    <MaterialIcons name={gameIcon(mob.icon)} size={24} color={colors.onSurfaceVariant} />
+                  </View>
+                  <View style={styles.mobInfo}>
+                    <Text style={styles.mobName} numberOfLines={1}>
+                      {mob.name}
+                    </Text>
+                    <Text style={styles.mobSub}>
+                      Ур. {mob.level} · {mob.hp} HP
+                    </Text>
+                  </View>
+                  <MaterialIcons name="info-outline" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
               ))}
             </Card>
           </View>
@@ -161,16 +176,78 @@ export function MainScreen() {
         </Text>
         <MaterialIcons name="expand-less" size={20} color={colors.textLabel} />
       </TouchableOpacity>
+
+      <MobDetailPopup
+        mob={selectedMob}
+        onClose={() => setSelectedMob(null)}
+        onFight={(mob) => {
+          setSelectedMob(null);
+          send('start_battle', { mobInstanceId: mob.instanceId });
+        }}
+      />
     </View>
+  );
+}
+
+function MobDetailPopup({
+  mob,
+  onClose,
+  onFight,
+}: {
+  mob: any;
+  onClose: () => void;
+  onFight: (mob: any) => void;
+}) {
+  if (!mob) return null;
+  const stats: { label: string; value: number; icon: keyof typeof MaterialIcons.glyphMap }[] = [
+    { label: 'Уровень', value: mob.level, icon: 'military-tech' },
+    { label: 'Здоровье', value: mob.hp, icon: 'favorite' },
+    { label: 'Физ. урон', value: mob.physicalAttack, icon: 'sports-martial-arts' },
+    { label: 'Маг. урон', value: mob.magicAttack, icon: 'whatshot' },
+    { label: 'Броня', value: mob.armor, icon: 'security' },
+    { label: 'Опыт', value: mob.xp, icon: 'star' },
+  ];
+
+  return (
+    <Popup visible={!!mob} onClose={onClose}>
+      <View style={styles.mobPopupHeader}>
+        <View style={styles.mobPopupAvatar}>
+          <MaterialIcons name={gameIcon(mob.icon)} size={32} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.mobPopupName}>{mob.name}</Text>
+          <Text style={styles.mobPopupLevel}>Монстр · Ур. {mob.level}</Text>
+        </View>
+      </View>
+
+      {mob.description ? <Text style={styles.mobPopupDesc}>{mob.description}</Text> : null}
+
+      <View style={styles.mobStatsGrid}>
+        {stats.map((s) => (
+          <View key={s.label} style={styles.mobStatCell}>
+            <MaterialIcons name={s.icon} size={16} color={colors.onSurfaceVariant} />
+            <Text style={styles.mobStatLabel}>{s.label}</Text>
+            <Text style={styles.mobStatValue}>{s.value}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.mobPopupActions}>
+        <PrimaryButton label="Закрыть" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
+        <PrimaryButton label="В бой" onPress={() => onFight(mob)} style={{ flex: 1 }} />
+      </View>
+    </Popup>
   );
 }
 
 function TravelProgressBar({
   traveling,
   locations,
+  onCancel,
 }: {
   traveling: { to: string; startedAt?: number; endsAt: number; durationMs?: number };
   locations: Record<string, any>;
+  onCancel: () => void;
 }) {
   const [progress, setProgress] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -198,10 +275,15 @@ function TravelProgressBar({
         <Text style={styles.travelDest}>
           Идём в: {destName} · {secondsLeft} сек
         </Text>
+        <TouchableOpacity style={styles.travelCancel} onPress={onCancel} activeOpacity={0.8}>
+          <MaterialIcons name="close" size={16} color={colors.onErrorContainer} />
+          <Text style={styles.travelCancelText}>Отменить</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.travelTrack}>
         <View style={[styles.travelFill, { width: `${progress}%` }]} />
       </View>
+      <Text style={styles.travelHint}>Выберите другой переход ниже, чтобы сменить направление.</Text>
     </View>
   );
 }
@@ -218,6 +300,7 @@ function LocationExitsList({ disabled }: { disabled: boolean }) {
       {location.exits.map((exitId: string) => {
         const isActive = traveling?.to === exitId;
         const isDisabled = disabled && !isActive;
+        const travelSec = location.travel?.[exitId];
         return (
           <TouchableOpacity
             key={exitId}
@@ -232,7 +315,9 @@ function LocationExitsList({ disabled }: { disabled: boolean }) {
                 {locations[exitId]?.name ?? exitId}
               </Text>
             </View>
-            <Text style={styles.exitTime}>{isActive ? 'В пути...' : '7–10 сек'}</Text>
+            <Text style={styles.exitTime}>
+              {isActive ? 'В пути...' : travelSec ? `${travelSec} сек` : '7–10 сек'}
+            </Text>
           </TouchableOpacity>
         );
       })}
@@ -320,6 +405,17 @@ const styles = StyleSheet.create({
   },
   travelHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   travelDest: { fontSize: 15, fontWeight: '700', color: colors.primary, flex: 1 },
+  travelCancel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.errorContainer,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  travelCancelText: { fontSize: 12, fontWeight: '600', color: colors.onErrorContainer },
+  travelHint: { fontSize: 12, color: colors.textSecondary },
   travelTrack: {
     height: 14,
     backgroundColor: colors.surfaceContainerHighest,
@@ -369,6 +465,44 @@ const styles = StyleSheet.create({
   exitNameActive: { color: colors.primary, fontWeight: '700' },
   exitTime: { fontSize: 13, color: colors.textSecondary },
   description: { fontSize: 16, lineHeight: 24, color: colors.onSurfaceVariant, paddingHorizontal: 8 },
+  mobRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  mobAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobInfo: { flex: 1 },
+  mobName: { fontSize: 16, color: colors.textPrimary, fontWeight: '500' },
+  mobSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  mobPopupHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: spacing.itemGap },
+  mobPopupAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobPopupName: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  mobPopupLevel: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  mobPopupDesc: { fontSize: 15, lineHeight: 22, color: colors.onSurfaceVariant, marginBottom: spacing.itemGap },
+  mobStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.itemGap },
+  mobStatCell: {
+    width: '31%',
+    flexGrow: 1,
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: radius.input,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    gap: 2,
+  },
+  mobStatLabel: { fontSize: 11, color: colors.textSecondary },
+  mobStatValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  mobPopupActions: { flexDirection: 'row', gap: spacing.itemGap },
   cityActions: { gap: 0 },
   section: { gap: 8 },
   listCard: { gap: spacing.rowGap },

@@ -7,8 +7,14 @@
     "server": "node scripts/free-port.js 3001 && npm run start --prefix server",
     "server:stop": "node scripts/free-port.js 3001",
     "client": "npm run start --prefix client",
+    "admin": "node scripts/free-port.js 3001 && npm run start --prefix server",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build:web": "npm run build:web --prefix client",
+    "start:prod": "node server/src/index.js",
     "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

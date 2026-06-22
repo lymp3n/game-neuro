@@ -106,6 +106,8 @@ export const MOBS = {
   goblin: {
     id: 'goblin',
     name: 'Гоблин',
+    description:
+      'Мелкий зеленокожий разбойник с ржавым кинжалом. Поодиночке труслив, но в стае нападает без раздумий.',
     level: 4,
     hp: 60,
     physicalAttack: 8,
@@ -122,6 +124,8 @@ export const MOBS = {
   goblin_chief: {
     id: 'goblin_chief',
     name: 'Вожак гоблинов',
+    description:
+      'Матёрый предводитель стаи. Носит трофейную броню и бьёт тяжёлой дубиной. Опытные искатели приключений уважают его силу.',
     level: 7,
     hp: 120,
     physicalAttack: 15,
@@ -139,6 +143,8 @@ export const MOBS = {
   dire_wolf: {
     id: 'dire_wolf',
     name: 'Лютоволк',
+    description:
+      'Огромный лесной хищник размером с лошадь. Стремителен и свиреп, его клыки пробивают лёгкую броню.',
     level: 7,
     hp: 90,
     physicalAttack: 14,
@@ -152,6 +158,8 @@ export const MOBS = {
   cave_rat: {
     id: 'cave_rat',
     name: 'Пещерная крыса',
+    description:
+      'Облезлая тварь размером с собаку, обитающая в сырых подземельях. Опасна разве что числом и заразой.',
     level: 3,
     hp: 40,
     physicalAttack: 6,
@@ -171,8 +179,11 @@ export const LOCATIONS = {
     description: 'Тихий торговый город у края леса. Здесь можно отдохнуть, торговать и хранить вещи в сундуке.',
     type: 'city',
     exits: ['darkwood', 'dungeon_entrance'],
+    travel: { darkwood: 8, dungeon_entrance: 6 },
     mobs: [],
     features: ['stash', 'merchant'],
+    x: 80,
+    y: 240,
   },
   darkwood: {
     id: 'darkwood',
@@ -180,7 +191,10 @@ export const LOCATIONS = {
     description: 'Сырой лес, где древние сосны скрывают солнце. Слышен вой волков и шорох гоблинов.',
     type: 'normal',
     exits: ['haven', 'darkwood_clearing'],
+    travel: { haven: 8, darkwood_clearing: 10 },
     mobs: ['goblin', 'goblin', 'dire_wolf'],
+    x: 360,
+    y: 120,
   },
   darkwood_clearing: {
     id: 'darkwood_clearing',
@@ -188,7 +202,10 @@ export const LOCATIONS = {
     description: 'Небольшая поляна посреди леса. Здесь обитает вожак гоблинов.',
     type: 'normal',
     exits: ['darkwood'],
+    travel: { darkwood: 10 },
     mobs: ['goblin_chief', 'goblin'],
+    x: 640,
+    y: 120,
   },
   dungeon_entrance: {
     id: 'dungeon_entrance',
@@ -196,8 +213,11 @@ export const LOCATIONS = {
     description: 'Тёмный проход ведёт в глубины земли. Нужен пропуск и группа.',
     type: 'dungeon_entry',
     exits: ['haven'],
+    travel: { haven: 6 },
     mobs: [],
     dungeonId: 'shadow_caves',
+    x: 360,
+    y: 400,
   },
 };
 
@@ -294,4 +314,84 @@ export function getEffectiveStats(player) {
     stats[s] = (player.stats[s] || 0) + (bonuses[s] || 0);
   }
   return stats;
+}
+
+const MOB_NUMERIC_FIELDS = ['level', 'hp', 'physicalAttack', 'magicAttack', 'armor', 'xp', 'respawnSec'];
+
+function sanitizeMob(id, raw = {}) {
+  const mob = {
+    id,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id,
+    description: typeof raw.description === 'string' ? raw.description : '',
+    icon: typeof raw.icon === 'string' && raw.icon ? raw.icon : 'smart_toy',
+    loot: Array.isArray(raw.loot) ? raw.loot.filter((l) => l && l.itemId) : [],
+  };
+  for (const field of MOB_NUMERIC_FIELDS) {
+    const value = Number(raw[field]);
+    mob[field] = Number.isFinite(value) ? value : 0;
+  }
+  if (!mob.respawnSec) mob.respawnSec = 300;
+  return mob;
+}
+
+function sanitizeLocation(id, raw = {}, knownMobIds) {
+  const exits = Array.isArray(raw.exits) ? [...new Set(raw.exits.filter((e) => typeof e === 'string'))] : [];
+  const travel = {};
+  if (raw.travel && typeof raw.travel === 'object') {
+    for (const [to, sec] of Object.entries(raw.travel)) {
+      const value = Number(sec);
+      if (Number.isFinite(value) && value > 0) travel[to] = value;
+    }
+  }
+  const mobs = Array.isArray(raw.mobs)
+    ? raw.mobs.filter((m) => typeof m === 'string' && (!knownMobIds || knownMobIds.has(m)))
+    : [];
+  const loc = {
+    id,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id,
+    description: typeof raw.description === 'string' ? raw.description : '',
+    type: typeof raw.type === 'string' && raw.type ? raw.type : 'normal',
+    exits,
+    travel,
+    mobs,
+    x: Number.isFinite(Number(raw.x)) ? Number(raw.x) : 100,
+    y: Number.isFinite(Number(raw.y)) ? Number(raw.y) : 100,
+  };
+  if (Array.isArray(raw.features)) loc.features = raw.features;
+  if (typeof raw.dungeonId === 'string') loc.dungeonId = raw.dungeonId;
+  return loc;
+}
+
+/**
+ * Returns a plain serializable snapshot of all editable content.
+ */
+export function exportContent() {
+  return {
+    mobs: JSON.parse(JSON.stringify(MOBS)),
+    locations: JSON.parse(JSON.stringify(LOCATIONS)),
+  };
+}
+
+/**
+ * Replaces the in-memory MOBS and LOCATIONS objects in place so existing
+ * references (e.g. inside the running world) immediately see the new content.
+ * Returns the sanitized content that was applied.
+ */
+export function applyContent(content = {}) {
+  const incomingMobs = content.mobs && typeof content.mobs === 'object' ? content.mobs : {};
+  const incomingLocations =
+    content.locations && typeof content.locations === 'object' ? content.locations : {};
+
+  for (const key of Object.keys(MOBS)) delete MOBS[key];
+  for (const [id, raw] of Object.entries(incomingMobs)) {
+    MOBS[id] = sanitizeMob(id, raw);
+  }
+
+  const knownMobIds = new Set(Object.keys(MOBS));
+  for (const key of Object.keys(LOCATIONS)) delete LOCATIONS[key];
+  for (const [id, raw] of Object.entries(incomingLocations)) {
+    LOCATIONS[id] = sanitizeLocation(id, raw, knownMobIds);
+  }
+
+  return exportContent();
 }

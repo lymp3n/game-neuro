@@ -282,25 +282,57 @@ export class GameWorld {
     }
   }
 
+  clearTravelTimer(playerId) {
+    const timer = this.travelTimers.get(playerId);
+    if (timer) {
+      clearTimeout(timer);
+      this.travelTimers.delete(playerId);
+    }
+  }
+
+  travelDurationMs(loc, targetLocationId) {
+    const sec = loc?.travel?.[targetLocationId];
+    if (Number.isFinite(sec) && sec > 0) return Math.round(sec * 1000);
+    return randomInt(TRAVEL_MIN_MS, TRAVEL_MAX_MS);
+  }
+
   startTravel(player, targetLocationId) {
-    if (player.inBattle || player.traveling) return { error: 'Занят' };
+    if (!player) return { error: 'Игрок не найден' };
+    if (player.inBattle) return { error: 'Нельзя идти во время боя' };
     const loc = this.getLocationForPlayer(player);
     if (!loc.exits.includes(targetLocationId)) return { error: 'Нет перехода' };
+    // Already heading to the same place — ignore.
+    if (player.traveling?.to === targetLocationId) return { player: this.serializePlayer(player) };
 
-    const duration = randomInt(TRAVEL_MIN_MS, TRAVEL_MAX_MS);
+    // Changing destination mid-travel: cancel the previous timer first.
+    this.clearTravelTimer(player.id);
+
+    const duration = this.travelDurationMs(loc, targetLocationId);
     const startedAt = Date.now();
     player.traveling = {
       to: targetLocationId,
+      from: player.inDungeon ? player.inDungeon.locationId : player.locationId,
       startedAt,
       endsAt: startedAt + duration,
       durationMs: duration,
     };
-    setTimeout(() => this.completeTravel(player.id), duration);
+    const timer = setTimeout(() => this.completeTravel(player.id), duration);
+    this.travelTimers.set(player.id, timer);
+    return { player: this.serializePlayer(player) };
+  }
+
+  cancelTravel(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return { error: 'Игрок не найден' };
+    if (!player.traveling) return { error: 'Вы никуда не идёте' };
+    this.clearTravelTimer(playerId);
+    player.traveling = null;
     return { player: this.serializePlayer(player) };
   }
 
   completeTravel(playerId) {
     const player = this.players.get(playerId);
+    this.travelTimers.delete(playerId);
     if (!player?.traveling) return;
     const target = player.traveling.to;
     player.traveling = null;
@@ -311,6 +343,46 @@ export class GameWorld {
     }
     this.send(player, { type: 'travel_complete', data: this.serializePlayer(player) });
     this.broadcastLocation(target);
+  }
+
+  /**
+   * Re-applies edited content (locations/mobs) to the running world without
+   * dropping connected players. Rebuilds mob instances for overworld locations,
+   * preserving alive/respawn state of mobs that still exist, then notifies
+   * everyone whose current location changed.
+   */
+  reloadContent() {
+    const previous = this.locationState;
+    this.locationState = {};
+    for (const loc of Object.values(LOCATIONS)) {
+      const old = previous[loc.id];
+      this.locationState[loc.id] = {
+        mobInstances: (loc.mobs || []).map((mobId, i) => {
+          const instanceId = `${loc.id}_${mobId}_${i}`;
+          const prevInst = old?.mobInstances.find((m) => m.instanceId === instanceId);
+          return {
+            instanceId,
+            mobId,
+            alive: prevInst ? prevInst.alive : true,
+            respawnAt: prevInst ? prevInst.respawnAt : null,
+          };
+        }),
+        groundItems: old?.groundItems ?? [],
+        activeBattles: old?.activeBattles ?? [],
+      };
+    }
+    // Move any player whose location was deleted back to a safe default.
+    const fallback = LOCATIONS.haven ? 'haven' : Object.keys(LOCATIONS)[0];
+    for (const player of this.players.values()) {
+      if (!player.inDungeon && !LOCATIONS[player.locationId] && fallback) {
+        player.locationId = fallback;
+        this.clearTravelTimer(player.id);
+        player.traveling = null;
+        this.send(player, { type: 'player_update', data: this.serializePlayer(player) });
+      } else if (player.ws) {
+        this.send(player, { type: 'player_update', data: this.serializePlayer(player) });
+      }
+    }
   }
 
   startBattle(playerId, mobInstanceId) {
@@ -849,6 +921,8 @@ export class GameWorld {
     switch (type) {
       case 'travel':
         return this.startTravel(this.getPlayer(playerId), payload.targetLocationId);
+      case 'cancel_travel':
+        return this.cancelTravel(playerId);
       case 'start_battle':
         return this.startBattle(playerId, payload.mobInstanceId);
       case 'join_battle':

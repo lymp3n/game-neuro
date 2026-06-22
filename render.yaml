@@ -1,0 +1,25 @@
+# Бесплатный хостинг на Render.com (https://render.com).
+# Один веб-сервис раздаёт сразу всё:
+#   /        — веб-версия игры (Expo web export)
+#   /admin   — конструктор мира (админка)
+#   /api,/ws — игровой сервер (REST + WebSocket)
+#
+# Как развернуть:
+# 1. Залейте репозиторий на GitHub (уже сделано).
+# 2. На render.com → New → Blueprint → выберите этот репозиторий.
+# 3. Render прочитает render.yaml и создаст сервис на бесплатном плане.
+# 4. ADMIN_TOKEN сгенерируется автоматически — посмотрите его в настройках
+#    сервиса (Environment) и введите при первом входе в /admin.
+services:
+  - type: web
+    name: textquest
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm --prefix server install && npm --prefix client install && npm --prefix client run build:web
+    startCommand: node server/src/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ADMIN_TOKEN
+        generateValue: true

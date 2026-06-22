@@ -9,3 +9,5 @@ dist/
 design/*.html
 stitch-screens.json
 stitch-screens-list.json
+server/src/data/content.json
+client/dist/

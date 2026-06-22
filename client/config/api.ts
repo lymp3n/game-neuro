@@ -36,7 +36,14 @@ export function getApiBaseUrl(): string {
 
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined') {
-      return `http://${window.location.hostname}:3001`;
+      const { hostname, port, origin } = window.location;
+      // Expo dev server ports — the API runs separately on :3001.
+      const devPorts = ['8081', '19006', '19000'];
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || devPorts.includes(port)) {
+        return `http://${hostname}:3001`;
+      }
+      // Production: the Node server serves both the web client and the API.
+      return stripTrailingSlash(origin);
     }
     return 'http://localhost:3001';
   }

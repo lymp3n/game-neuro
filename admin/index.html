@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TextQuest — Конструктор мира</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="material-icons">map</span>
+        <div>
+          <h1>Конструктор мира</h1>
+          <p class="subtitle">Локации, мобы и переходы — меняются в игре сразу</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="status" class="status">Загрузка…</span>
+        <button id="reloadBtn" class="btn btn-ghost">
+          <span class="material-icons">refresh</span> Сбросить
+        </button>
+        <button id="saveBtn" class="btn btn-primary">
+          <span class="material-icons">cloud_upload</span> Сохранить и применить
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>Бестиарий</h2>
+          <button id="addMobBtn" class="btn btn-small btn-primary">
+            <span class="material-icons">add</span> Моб
+          </button>
+        </div>
+        <p class="hint">Перетащите моба на локацию, чтобы заселить её.</p>
+        <div id="mobList" class="mob-list"></div>
+      </aside>
+
+      <main class="canvas-wrap">
+        <div class="canvas-toolbar">
+          <button id="addLocationBtn" class="btn btn-secondary">
+            <span class="material-icons">add_location_alt</span> Новая локация
+          </button>
+          <div id="connectHint" class="connect-hint hidden">
+            <span class="material-icons">touch_app</span>
+            Кликните на локацию, куда ведёт переход. <button id="cancelConnect" class="link">Отмена</button>
+          </div>
+          <div class="legend">
+            <span><i class="dot dot-city"></i> Город</span>
+            <span><i class="dot dot-normal"></i> Локация</span>
+            <span><i class="dot dot-dungeon"></i> Подземелье</span>
+          </div>
+        </div>
+        <div id="canvas" class="canvas">
+          <svg id="edges" class="edges"></svg>
+          <div id="nodes" class="nodes"></div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Location editor modal -->
+    <div id="locModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3>Локация</h3>
+          <button class="icon-btn" data-close="locModal"><span class="material-icons">close</span></button>
+        </div>
+        <div class="modal-body">
+          <label>Название
+            <input id="locName" type="text" placeholder="Тёмный лес" />
+          </label>
+          <label>Тип
+            <select id="locType">
+              <option value="normal">Обычная локация</option>
+              <option value="city">Город (торговец, сундук)</option>
+              <option value="dungeon_entry">Вход в подземелье</option>
+            </select>
+          </label>
+          <label>Описание
+            <textarea id="locDesc" rows="3" placeholder="Что игрок видит в этой локации"></textarea>
+          </label>
+          <div class="field-title">Обитающие мобы</div>
+          <div id="locMobs" class="loc-mobs"></div>
+          <p class="hint">Используйте + и − чтобы задать, сколько мобов появляется.</p>
+        </div>
+        <div class="modal-foot">
+          <button id="deleteLocBtn" class="btn btn-danger"><span class="material-icons">delete</span> Удалить</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost" data-close="locModal">Отмена</button>
+          <button id="saveLocBtn" class="btn btn-primary">Готово</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mob editor modal -->
+    <div id="mobModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3>Моб</h3>
+          <button class="icon-btn" data-close="mobModal"><span class="material-icons">close</span></button>
+        </div>
+        <div class="modal-body">
+          <label>Название
+            <input id="mobName" type="text" placeholder="Гоблин" />
+          </label>
+          <label>Описание
+            <textarea id="mobDesc" rows="3" placeholder="Кто это и чем опасен"></textarea>
+          </label>
+          <div class="grid2">
+            <label>Уровень<input id="mobLevel" type="number" min="1" value="1" /></label>
+            <label>Здоровье<input id="mobHp" type="number" min="1" value="50" /></label>
+            <label>Физ. урон<input id="mobPhys" type="number" min="0" value="8" /></label>
+            <label>Маг. урон<input id="mobMag" type="number" min="0" value="0" /></label>
+            <label>Броня<input id="mobArmor" type="number" min="0" value="2" /></label>
+            <label>Опыт<input id="mobXp" type="number" min="0" value="20" /></label>
+          </div>
+          <label>Иконка (Material Icons)
+            <input id="mobIcon" type="text" placeholder="smart_toy" />
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button id="deleteMobBtn" class="btn btn-danger"><span class="material-icons">delete</span> Удалить</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost" data-close="mobModal">Отмена</button>
+          <button id="saveMobBtn" class="btn btn-primary">Готово</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edge editor modal -->
+    <div id="edgeModal" class="modal hidden">
+      <div class="modal-card modal-narrow">
+        <div class="modal-head">
+          <h3>Переход</h3>
+          <button class="icon-btn" data-close="edgeModal"><span class="material-icons">close</span></button>
+        </div>
+        <div class="modal-body">
+          <div class="edge-row">
+            <label class="check"><input id="edgeAB" type="checkbox" /> <span id="edgeABLabel">A → B</span></label>
+            <label class="secs">сек <input id="edgeABTime" type="number" min="1" value="8" /></label>
+          </div>
+          <div class="edge-row">
+            <label class="check"><input id="edgeBA" type="checkbox" /> <span id="edgeBALabel">B → A</span></label>
+            <label class="secs">сек <input id="edgeBATime" type="number" min="1" value="8" /></label>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost" data-close="edgeModal">Отмена</button>
+          <button id="saveEdgeBtn" class="btn btn-primary">Готово</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="tokenGate" class="token-gate hidden">
+      <div class="token-card">
+        <span class="material-icons">lock</span>
+        <h3>Доступ к админке</h3>
+        <p>Введите токен администратора (переменная ADMIN_TOKEN на сервере).</p>
+        <input id="tokenInput" type="password" placeholder="Токен" />
+        <button id="tokenBtn" class="btn btn-primary">Войти</button>
+        <p id="tokenError" class="token-error"></p>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
