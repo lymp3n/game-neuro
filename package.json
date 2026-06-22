@@ -1,0 +1,15 @@
+{
+  "name": "textquest-mmorpg",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "server": "node scripts/free-port.js 3001 && npm run start --prefix server",
+    "server:stop": "node scripts/free-port.js 3001",
+    "client": "npm run start --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

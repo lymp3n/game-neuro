@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+dist/
+*.log
+.env
+.env.local
+.DS_Store
+.idea/
+design/*.html
+stitch-screens.json
+stitch-screens-list.json
