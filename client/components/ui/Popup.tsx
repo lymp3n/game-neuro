@@ -39,8 +39,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: spacing.py,
     width: '100%',
-    maxWidth: 360,
-    maxHeight: '70%',
+    maxWidth: 380,
+    maxHeight: '88%',
   },
   title: {
     fontSize: 18,

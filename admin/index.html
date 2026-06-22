@@ -114,13 +114,21 @@
             <textarea id="mobDesc" rows="3" placeholder="Кто это и чем опасен"></textarea>
           </label>
           <div class="grid2">
-            <label>Уровень<input id="mobLevel" type="number" min="1" value="1" /></label>
-            <label>Здоровье<input id="mobHp" type="number" min="1" value="50" /></label>
-            <label>Физ. урон<input id="mobPhys" type="number" min="0" value="8" /></label>
-            <label>Маг. урон<input id="mobMag" type="number" min="0" value="0" /></label>
-            <label>Броня<input id="mobArmor" type="number" min="0" value="2" /></label>
-            <label>Опыт<input id="mobXp" type="number" min="0" value="20" /></label>
+            <label>Уровень<input id="mobLevel" type="number" min="1" max="150" value="1" /></label>
+            <label>Опыт за победу<input id="mobXp" type="number" min="0" value="20" /></label>
           </div>
+          <h4 class="form-section">Характеристики</h4>
+          <p id="mobPointsHint" class="hint"></p>
+          <div class="grid2">
+            <label>Сила<input id="stat_strength" type="number" min="0" value="0" class="mob-stat" /></label>
+            <label>Ловкость<input id="stat_agility" type="number" min="0" value="0" class="mob-stat" /></label>
+            <label>Выносливость<input id="stat_endurance" type="number" min="0" value="0" class="mob-stat" /></label>
+            <label>Интеллект<input id="stat_intellect" type="number" min="0" value="0" class="mob-stat" /></label>
+            <label>Дух<input id="stat_spirit" type="number" min="0" value="0" class="mob-stat" /></label>
+            <label>Воля<input id="stat_will" type="number" min="0" value="0" class="mob-stat" /></label>
+            <label>Удача<input id="stat_luck" type="number" min="0" value="0" class="mob-stat" /></label>
+          </div>
+          <p id="mobDerivedHint" class="hint"></p>
           <label>Иконка (Material Icons)
             <input id="mobIcon" type="text" placeholder="smart_toy" />
           </label>

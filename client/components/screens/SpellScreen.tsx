@@ -16,7 +16,10 @@ export function SpellScreen() {
 
   const assigned = new Set(player.spellSlots.filter(Boolean));
   const learnedUnassigned = player.learnedSpells.filter((id: string) => !assigned.has(id));
-  const unlearned = Object.keys(spells).filter((id) => !player.learnedSpells.includes(id));
+  const unlearned = Object.keys(spells)
+    .filter((id) => !player.learnedSpells.includes(id))
+    .sort((a, b) => (spells[a].requiredLevel ?? 0) - (spells[b].requiredLevel ?? 0));
+  const slotCount = player.spellSlotCount ?? player.spellSlots.length;
 
   const openPicker = (slotIndex: number) => {
     setPickerSlot(slotIndex);
@@ -34,7 +37,8 @@ export function SpellScreen() {
   return (
     <FullScreenOverlay title="Заклинания" onClose={closeOverlay}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionLabel}>Быстрые слоты</Text>
+        <Text style={styles.sectionLabel}>Боевые слоты ({slotCount}/7)</Text>
+        <Text style={styles.slotHint}>Слоты открываются на 1, 15, 30, 50, 75 и 100 уровнях.</Text>
         <View style={styles.slotGrid}>
           {player.spellSlots.map((spellId: string | null, i: number) => (
             <TouchableOpacity
@@ -65,13 +69,14 @@ export function SpellScreen() {
             <View key={id} style={styles.spellRow}>
               <View style={styles.spellInfo}>
                 <MaterialIcons name={gameIcon(spells[id]?.icon)} size={22} color={colors.onSurfaceVariant} />
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.spellName}>{spells[id]?.name}</Text>
                   <Text style={styles.spellMeta}>Мана: {spells[id]?.manaCost}</Text>
+                  {spells[id]?.description ? <Text style={styles.spellDesc}>{spells[id].description}</Text> : null}
                 </View>
               </View>
               <PrimaryButton
-                label="Assign"
+                label="В слот"
                 onPress={() => {
                   const free = player.spellSlots.findIndex((s: string | null) => !s);
                   if (free >= 0) send('assign_spell', { spellId: id, slotIndex: free });
@@ -85,21 +90,25 @@ export function SpellScreen() {
         <Text style={styles.sectionLabel}>Не изученные</Text>
         {unlearned.map((id) => {
           const spell = spells[id];
-          const canLearn =
-            player.level >= spell.requiredLevel && player.skillPoints >= spell.skillPointCost;
+          const canLearn = player.level >= spell.requiredLevel;
           return (
             <View key={id} style={styles.spellRow}>
               <View style={styles.spellInfo}>
-                <MaterialIcons name={gameIcon(spell.icon)} size={22} color={colors.textLabel} />
-                <View>
+                <MaterialIcons
+                  name={canLearn ? gameIcon(spell.icon) : 'lock'}
+                  size={22}
+                  color={canLearn ? colors.onSurfaceVariant : colors.textLabel}
+                />
+                <View style={{ flex: 1 }}>
                   <Text style={styles.spellName}>{spell.name}</Text>
                   <Text style={styles.spellMeta}>
-                    Ур. {spell.requiredLevel} · {spell.skillPointCost} очк.
+                    Требуется ур. {spell.requiredLevel} · мана {spell.manaCost}
                   </Text>
+                  {spell.description ? <Text style={styles.spellDesc}>{spell.description}</Text> : null}
                 </View>
               </View>
               <PrimaryButton
-                label="+ Learn"
+                label="Изучить"
                 onPress={() => send('learn_spell', { spellId: id })}
                 disabled={!canLearn}
                 style={styles.rowBtn}
@@ -107,7 +116,6 @@ export function SpellScreen() {
             </View>
           );
         })}
-        <Text style={styles.pointsHint}>Очков умений: {player.skillPoints}</Text>
       </ScrollView>
 
       <Popup visible={pickerOpen} onClose={() => setPickerOpen(false)} title="Выберите заклинание">
@@ -125,7 +133,9 @@ export function SpellScreen() {
 
 const styles = StyleSheet.create({
   content: { paddingBottom: 40, gap: spacing.itemGap },
-  sectionLabel: { fontSize: 14, fontWeight: '500', color: colors.onSurfaceVariant, marginTop: 8 },
+  sectionLabel: { fontSize: 15, fontWeight: '700', color: colors.onSurfaceVariant, marginTop: 8 },
+  slotHint: { fontSize: 12, color: colors.textSecondary, marginTop: -4 },
+  spellDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 16 },
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   slot: {
     width: '22%',

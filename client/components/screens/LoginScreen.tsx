@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,10 +14,12 @@ import { API_URL } from '@/config/api';
 import { colors, radius, shadow, spacing } from '@/theme/colors';
 
 export function LoginScreen() {
-  const { login } = useGame();
+  const { login, loginGoogle } = useGame();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const googleInited = useRef(false);
 
   const handleLogin = async () => {
     if (!name.trim()) {
@@ -34,6 +36,54 @@ export function LoginScreen() {
       setLoading(false);
     }
   };
+
+  // Google Sign-In только на вебе и только если настроен на сервере.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/google/config`);
+        const cfg = await res.json();
+        if (cancelled || !cfg.enabled || !cfg.clientId) return;
+        setGoogleEnabled(true);
+
+        const render = () => {
+          const g = (window as any).google;
+          if (!g || googleInited.current) return;
+          googleInited.current = true;
+          g.accounts.id.initialize({
+            client_id: cfg.clientId,
+            callback: async (resp: any) => {
+              try {
+                await loginGoogle(resp.credential);
+              } catch (e: any) {
+                setError(e.message ?? 'Ошибка входа через Google');
+              }
+            },
+          });
+          const el = document.getElementById('gsi-button');
+          if (el) g.accounts.id.renderButton(el, { theme: 'outline', size: 'large', width: 280 });
+        };
+
+        if ((window as any).google) {
+          render();
+        } else {
+          const script = document.createElement('script');
+          script.src = 'https://accounts.google.com/gsi/client';
+          script.async = true;
+          script.defer = true;
+          script.onload = render;
+          document.head.appendChild(script);
+        }
+      } catch {
+        /* Google-вход недоступен — игнорируем */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loginGoogle]);
 
   return (
     <KeyboardAvoidingView
@@ -59,6 +109,13 @@ export function LoginScreen() {
         ) : (
           <PrimaryButton label="Войти в игру" onPress={handleLogin} style={styles.btn} />
         )}
+
+        {googleEnabled ? (
+          <View style={styles.googleWrap}>
+            <Text style={styles.orText}>или</Text>
+            <View nativeID="gsi-button" style={styles.gsiBtn} />
+          </View>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -103,4 +160,7 @@ const styles = StyleSheet.create({
   error: { color: colors.error, marginTop: 8, textAlign: 'center' },
   apiHint: { fontSize: 11, color: colors.textLabel, textAlign: 'center', marginTop: 8 },
   btn: { marginTop: 24, width: '100%' },
+  googleWrap: { marginTop: 20, alignItems: 'center', gap: 12 },
+  orText: { fontSize: 13, color: colors.textSecondary },
+  gsiBtn: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
 });

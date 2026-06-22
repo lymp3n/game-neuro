@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/context/GameContext';
 import { Popup } from '@/components/ui/Popup';
+import { StatSheet } from '@/components/ui/StatSheet';
 import { gameIcon } from '@/utils/icons';
 import { colors, radius, shadow, spacing } from '@/theme/colors';
 
@@ -10,6 +11,7 @@ export function BattleScreen() {
   const { player, battle, spells, items, closeAllOverlays, send } = useGame();
   const [spellPopup, setSpellPopup] = useState(false);
   const [potionPopup, setPotionPopup] = useState(false);
+  const [infoTarget, setInfoTarget] = useState<'player' | 'mob' | null>(null);
   const [turnLeft, setTurnLeft] = useState(10);
   const [actionLock, setActionLock] = useState(false);
   const logRef = useRef<ScrollView>(null);
@@ -69,27 +71,37 @@ export function BattleScreen() {
       </View>
 
       <View style={styles.statusRow}>
-        <View style={styles.statusCard}>
-          <MaterialIcons name="person" size={24} color={colors.primary} />
+        <TouchableOpacity style={styles.statusCard} activeOpacity={0.8} onPress={() => setInfoTarget('player')}>
+          <View style={styles.statusAvatar}>
+            <MaterialIcons name="person" size={22} color={colors.primary} />
+            <MaterialIcons name="info" size={12} color={colors.primary} style={styles.infoBadge} />
+          </View>
           <View style={styles.statusInfo}>
-            <Text style={styles.statusName}>{player.name}</Text>
+            <Text style={styles.statusName} numberOfLines={1}>{player.name}</Text>
+            <Text style={styles.statusNums}>{me?.hp}/{me?.maxHp} HP</Text>
             <View style={styles.barBg}>
               <View style={[styles.barHp, { width: `${playerHpPct}%` }]} />
             </View>
             <View style={styles.barBg}>
               <View style={[styles.barMana, { width: `${(me?.mana / me?.maxMana) * 100}%` }]} />
             </View>
+            {me?.debuffs?.length ? <Text style={styles.debuffNote}>⚠ дебаффы: {me.debuffs.length}</Text> : null}
           </View>
-        </View>
-        <View style={styles.statusCard}>
-          <MaterialIcons name="smart-toy" size={24} color={colors.error} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statusCard} activeOpacity={0.8} onPress={() => setInfoTarget('mob')}>
+          <View style={styles.statusAvatar}>
+            <MaterialIcons name={gameIcon(battle.mobInfo?.icon)} size={22} color={colors.error} />
+            <MaterialIcons name="info" size={12} color={colors.error} style={styles.infoBadge} />
+          </View>
           <View style={styles.statusInfo}>
-            <Text style={styles.statusName}>{battle.mobName} Lv.{battle.mobLevel}</Text>
+            <Text style={styles.statusName} numberOfLines={1}>{battle.mobName} · {battle.mobLevel}</Text>
+            <Text style={styles.statusNums}>{Math.max(0, battle.mobHp)}/{battle.mobMaxHp} HP</Text>
             <View style={styles.barBg}>
               <View style={[styles.barHp, { width: `${hpPct}%` }]} />
             </View>
+            {battle.mobInfo?.debuffs?.length ? <Text style={styles.debuffNote}>⚠ дебаффы: {battle.mobInfo.debuffs.length}</Text> : null}
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView ref={logRef} style={styles.log} contentContainerStyle={styles.logContent}>
@@ -152,6 +164,31 @@ export function BattleScreen() {
           ))
         )}
       </Popup>
+
+      <Popup visible={!!infoTarget} onClose={() => setInfoTarget(null)}>
+        {(() => {
+          const isPlayer = infoTarget === 'player';
+          const data = isPlayer ? me : battle.mobInfo;
+          if (!data) return null;
+          return (
+            <>
+              <Text style={styles.infoTitle}>
+                {isPlayer ? player.name : battle.mobName} · Ур. {data.level ?? battle.mobLevel}
+              </Text>
+              {!isPlayer && battle.mobInfo?.description ? (
+                <Text style={styles.infoDesc}>{battle.mobInfo.description}</Text>
+              ) : null}
+              <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator>
+                <StatSheet
+                  stats={data.effectiveStats ?? data.stats}
+                  derived={data.derived}
+                  debuffs={data.debuffs}
+                />
+              </ScrollView>
+            </>
+          );
+        })()}
+      </Popup>
     </View>
   );
 }
@@ -204,8 +241,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surfaceContainerHighest,
   },
+  statusAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoBadge: { position: 'absolute', bottom: -1, right: -1 },
   statusInfo: { flex: 1 },
   statusName: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  statusNums: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  debuffNote: { fontSize: 10, color: colors.onErrorContainer, marginTop: 3, fontWeight: '600' },
+  infoTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  infoDesc: { fontSize: 14, lineHeight: 20, color: colors.onSurfaceVariant, marginBottom: 10 },
   barBg: { height: 4, backgroundColor: colors.surfaceContainerHighest, borderRadius: 2, marginTop: 4, overflow: 'hidden' },
   barHp: { height: '100%', backgroundColor: colors.error },
   barMana: { height: '100%', backgroundColor: colors.primary },

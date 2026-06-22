@@ -136,7 +136,7 @@
       card.dataset.mobId = mob.id;
       card.innerHTML = `
         <div class="ic"><span class="material-icons">${escapeAttr(mob.icon || 'smart_toy')}</span></div>
-        <div class="meta"><b>${escapeHtml(mob.name)}</b><small>Ур.${mob.level} · ${mob.hp} HP</small></div>
+        <div class="meta"><b>${escapeHtml(mob.name)}</b><small>Ур.${mob.level} · ${mobMaxHp(mob)} HP</small></div>
         <span class="edit material-icons" title="Изменить">edit</span>`;
       card.querySelector('.edit').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -497,20 +497,63 @@
   }
 
   // ---------- mob modal ----------
+  const MOB_STATS = ['strength', 'agility', 'endurance', 'intellect', 'spirit', 'will', 'luck'];
+
+  function totalStatPoints(level) {
+    return 10 + 2 * (Math.max(1, level) - 1);
+  }
+  function spentStatPoints(stats) {
+    let total = 0;
+    for (const s of MOB_STATS) {
+      const v = Math.max(0, Math.floor(stats?.[s] || 0));
+      for (let i = 0; i < v; i++) total += 1 + Math.floor(i / 10);
+    }
+    return total;
+  }
+  function mobMaxHp(mob) {
+    const s = mob.stats || {};
+    return Math.round(60 + (s.endurance || 0) * 10 + (mob.level || 1) * 5);
+  }
+  function readMobStats() {
+    const stats = {};
+    for (const s of MOB_STATS) stats[s] = +$('stat_' + s).value || 0;
+    return stats;
+  }
+  function updateMobHints() {
+    const level = +$('mobLevel').value || 1;
+    const stats = readMobStats();
+    const spent = spentStatPoints(stats);
+    const total = totalStatPoints(level);
+    const hint = $('mobPointsHint');
+    hint.textContent = `Очки характеристик: ${spent} / ${total}` + (spent > total ? ' — превышен бюджет!' : '');
+    hint.style.color = spent > total ? '#c0392b' : '';
+    const s = stats;
+    const physDmg = Math.round(6 + s.strength * 2 + level * 0.5);
+    const magDmg = Math.round(5 + s.intellect * 2 + level * 0.5);
+    const physArmor = Math.round(s.endurance * 1.5 + s.agility * 0.3);
+    const magArmor = Math.round(s.spirit * 1.8 + s.intellect * 0.5);
+    $('mobDerivedHint').textContent =
+      `≈ HP ${Math.round(60 + s.endurance * 10 + level * 5)} · Физ.урон ${physDmg} · Маг.урон ${magDmg} · Физ.защ ${physArmor} · Маг.защ ${magArmor}`;
+  }
+
   function openMobModal(id) {
     state.editingMobId = id;
     const isNew = !id;
-    const mob = id ? state.content.mobs[id] : { name: '', description: '', level: 1, hp: 50, physicalAttack: 8, magicAttack: 0, armor: 2, xp: 20, icon: 'smart_toy' };
+    const mob = id
+      ? state.content.mobs[id]
+      : { name: '', description: '', level: 1, xp: 20, stats: {}, icon: 'smart_toy' };
     $('mobName').value = mob.name || '';
     $('mobDesc').value = mob.description || '';
     $('mobLevel').value = mob.level ?? 1;
-    $('mobHp').value = mob.hp ?? 50;
-    $('mobPhys').value = mob.physicalAttack ?? 8;
-    $('mobMag').value = mob.magicAttack ?? 0;
-    $('mobArmor').value = mob.armor ?? 2;
     $('mobXp').value = mob.xp ?? 20;
+    for (const s of MOB_STATS) $('stat_' + s).value = mob.stats?.[s] ?? 0;
     $('mobIcon').value = mob.icon || 'smart_toy';
     $('deleteMobBtn').style.display = isNew ? 'none' : '';
+    updateMobHints();
+    document.querySelectorAll('.mob-stat').forEach((el) => {
+      el.oninput = updateMobHints;
+    });
+    $('mobLevel').oninput = updateMobHints;
     $('mobModal').classList.remove('hidden');
   }
 
@@ -519,11 +562,8 @@
       name: $('mobName').value.trim() || 'Моб',
       description: $('mobDesc').value.trim(),
       level: +$('mobLevel').value || 1,
-      hp: +$('mobHp').value || 1,
-      physicalAttack: +$('mobPhys').value || 0,
-      magicAttack: +$('mobMag').value || 0,
-      armor: +$('mobArmor').value || 0,
       xp: +$('mobXp').value || 0,
+      stats: readMobStats(),
       icon: $('mobIcon').value.trim() || 'smart_toy',
     };
     let id = state.editingMobId;

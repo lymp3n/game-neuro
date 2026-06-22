@@ -1,14 +1,55 @@
-export const STATS = ['strength', 'agility', 'endurance', 'wisdom', 'intuition', 'luck', 'will'];
+export const STATS = ['strength', 'agility', 'endurance', 'intellect', 'spirit', 'will', 'luck'];
 
 export const STAT_LABELS = {
   strength: 'Сила',
   agility: 'Ловкость',
   endurance: 'Выносливость',
-  wisdom: 'Мудрость',
-  intuition: 'Интуиция',
-  luck: 'Удача',
+  intellect: 'Интеллект',
+  spirit: 'Дух',
   will: 'Воля',
+  luck: 'Удача',
 };
+
+export const STAT_DESCRIPTIONS = {
+  strength: 'Физический урон и вместимость личного инвентаря.',
+  agility: 'Шанс уклонения от атак.',
+  endurance: 'Здоровье, физическая защита и небольшая сопротивляемость дебаффам.',
+  intellect: 'Магический урон и немного магической защиты.',
+  spirit: 'Мана, сильная магическая защита, сила и длительность накладываемых дебаффов.',
+  will: 'Сопротивляемость дебаффам, ясность рассудка (защита от безумия) и эффективность тренировок.',
+  luck: 'Шанс крит. удара, защита от критов и небольшая сопротивляемость дебаффам.',
+};
+
+// ---- Прогрессия уровней и очков характеристик ----
+export const MAX_LEVEL = 150;
+export const BASE_STAT_POINTS = 10; // на 1 уровне
+export const STAT_POINTS_PER_LEVEL = 2; // за каждый уровень
+
+// Бюджет очков характеристик у персонажа/моба данного уровня.
+export function totalStatPoints(level) {
+  const lvl = Math.max(1, Math.min(MAX_LEVEL, level || 1));
+  return BASE_STAT_POINTS + STAT_POINTS_PER_LEVEL * (lvl - 1);
+}
+
+// Стоимость поднятия характеристики на +1 при текущем значении value.
+// До 10 — 1 очко, 10..19 — 2 очка, 20..29 — 3 очка и т.д.
+export function statUpgradeCost(currentValue) {
+  return 1 + Math.floor((currentValue || 0) / 10);
+}
+
+// Сколько очков уже вложено в набор характеристик.
+export function spentStatPoints(stats) {
+  let total = 0;
+  for (const s of STATS) {
+    const v = Math.max(0, Math.floor(stats?.[s] || 0));
+    for (let i = 0; i < v; i++) total += 1 + Math.floor(i / 10);
+  }
+  return total;
+}
+
+export function availableStatPoints(unit) {
+  return totalStatPoints(unit.level) - spentStatPoints(unit.stats);
+}
 
 export const ITEMS = {
   health_potion: {
@@ -69,51 +110,141 @@ export const ITEMS = {
   },
 };
 
+// Заклинания изучаются по достижении requiredLevel (вехи уровней).
 export const SPELLS = {
   fireball: {
     id: 'fireball',
     name: 'Огненный шар',
-    manaCost: 15,
+    manaCost: 12,
     consumesTurn: true,
-    effect: { damage: 25, type: 'magic' },
-    requiredLevel: 3,
-    skillPointCost: 1,
+    effect: { damage: 16, type: 'magic' },
+    requiredLevel: 1,
     icon: 'whatshot',
+    description: 'Базовый магический снаряд. Урон зависит от Интеллекта.',
+  },
+  quick_strike: {
+    id: 'quick_strike',
+    name: 'Быстрый удар',
+    manaCost: 8,
+    consumesTurn: true,
+    effect: { damage: 10, type: 'physical' },
+    requiredLevel: 5,
+    icon: 'bolt',
+    description: 'Стремительный физический выпад.',
+  },
+  frost_bolt: {
+    id: 'frost_bolt',
+    name: 'Ледяная стрела',
+    manaCost: 18,
+    consumesTurn: true,
+    effect: { damage: 24, type: 'magic', debuff: { type: 'weaken', stat: 'agility', amount: 4, durationTurns: 2 } },
+    requiredLevel: 10,
+    icon: 'ac-unit',
+    description: 'Урон + замедление: снижает Ловкость цели.',
   },
   heal: {
     id: 'heal',
     name: 'Исцеление',
     manaCost: 20,
     consumesTurn: true,
-    effect: { heal: 35 },
-    requiredLevel: 5,
-    skillPointCost: 2,
+    effect: { heal: 30 },
+    requiredLevel: 20,
     icon: 'favorite',
+    description: 'Восстанавливает здоровье. Сила лечения зависит от Духа.',
   },
-  quick_strike: {
-    id: 'quick_strike',
-    name: 'Быстрый удар',
-    manaCost: 10,
+  weaken: {
+    id: 'weaken',
+    name: 'Ослабление',
+    manaCost: 22,
     consumesTurn: true,
-    effect: { damage: 12, type: 'physical' },
-    requiredLevel: 7,
-    skillPointCost: 2,
-    icon: 'bolt',
+    effect: { debuff: { type: 'weaken', stat: 'strength', amount: 6, durationTurns: 3 } },
+    requiredLevel: 30,
+    icon: 'trending-down',
+    description: 'Дебафф: снижает Силу цели. Шанс и длительность зависят от Духа.',
+  },
+  purge: {
+    id: 'purge',
+    name: 'Очищение',
+    manaCost: 25,
+    consumesTurn: true,
+    effect: { cleanse: true },
+    requiredLevel: 40,
+    icon: 'cleaning-services',
+    description: 'Снимает все дебаффы с заклинателя.',
+  },
+  confusion: {
+    id: 'confusion',
+    name: 'Помрачение',
+    manaCost: 35,
+    consumesTurn: true,
+    effect: { debuff: { type: 'madness', durationTurns: 2 } },
+    requiredLevel: 50,
+    icon: 'psychology',
+    description: 'Дебафф безумия: цель может потерять контроль и действовать случайно.',
+  },
+  greater_heal: {
+    id: 'greater_heal',
+    name: 'Большое исцеление',
+    manaCost: 45,
+    consumesTurn: true,
+    effect: { heal: 70 },
+    requiredLevel: 75,
+    icon: 'healing',
+    description: 'Мощное исцеление. Сила зависит от Духа.',
+  },
+  meteor: {
+    id: 'meteor',
+    name: 'Метеор',
+    manaCost: 70,
+    consumesTurn: true,
+    effect: { damage: 80, type: 'magic' },
+    requiredLevel: 100,
+    icon: 'flare',
+    description: 'Разрушительный магический удар по цели.',
   },
 };
 
+// Прогрессия слотов заклинаний: 2 на 1 ур. → 7 на 100 ур. Больше 7 не бывает.
+export const SPELL_SLOT_THRESHOLDS = [1, 15, 30, 50, 75, 100];
+export function spellSlotCount(level) {
+  let count = 1; // первый слот всегда
+  for (const t of SPELL_SLOT_THRESHOLDS) if (level >= t) count++;
+  return Math.min(7, count);
+}
+
+// Мобы заданы как и игроки: уровень + характеристики (бюджет = totalStatPoints(level)).
+// Все боевые параметры (HP, урон, защиты) вычисляются из характеристик.
 export const MOBS = {
+  forest_critter: {
+    id: 'forest_critter',
+    name: 'Лесной зверёк',
+    description: 'Мелкий пугливый зверёк. Кусается, но особой угрозы не представляет — добыча для новичков.',
+    level: 1,
+    xp: 8,
+    stats: { strength: 3, agility: 4, endurance: 1, intellect: 0, spirit: 0, will: 1, luck: 1 },
+    respawnSec: 120,
+    loot: [{ itemId: 'health_potion', chance: 0.2 }],
+    icon: 'pets',
+  },
+  young_goblin: {
+    id: 'young_goblin',
+    name: 'Гоблин-молодняк',
+    description: 'Юный гоблин, ещё не освоивший хитрости стаи. Неплохая разминка для начинающего искателя приключений.',
+    level: 2,
+    xp: 14,
+    stats: { strength: 4, agility: 3, endurance: 2, intellect: 0, spirit: 1, will: 1, luck: 1 },
+    respawnSec: 180,
+    loot: [{ itemId: 'health_potion', chance: 0.3 }],
+    icon: 'smart_toy',
+  },
   goblin: {
     id: 'goblin',
     name: 'Гоблин',
     description:
       'Мелкий зеленокожий разбойник с ржавым кинжалом. Поодиночке труслив, но в стае нападает без раздумий.',
     level: 4,
-    hp: 60,
-    physicalAttack: 8,
-    magicAttack: 2,
-    armor: 3,
     xp: 25,
+    stats: { strength: 5, agility: 3, endurance: 4, intellect: 0, spirit: 1, will: 1, luck: 2 },
     respawnSec: 300,
     loot: [
       { itemId: 'health_potion', chance: 0.4 },
@@ -127,11 +258,8 @@ export const MOBS = {
     description:
       'Матёрый предводитель стаи. Носит трофейную броню и бьёт тяжёлой дубиной. Опытные искатели приключений уважают его силу.',
     level: 7,
-    hp: 120,
-    physicalAttack: 15,
-    magicAttack: 5,
-    armor: 8,
     xp: 60,
+    stats: { strength: 8, agility: 2, endurance: 6, intellect: 0, spirit: 1, will: 3, luck: 2 },
     respawnSec: 300,
     loot: [
       { itemId: 'health_potion', chance: 0.6 },
@@ -146,11 +274,8 @@ export const MOBS = {
     description:
       'Огромный лесной хищник размером с лошадь. Стремителен и свиреп, его клыки пробивают лёгкую броню.',
     level: 7,
-    hp: 90,
-    physicalAttack: 14,
-    magicAttack: 0,
-    armor: 5,
     xp: 45,
+    stats: { strength: 6, agility: 7, endurance: 5, intellect: 0, spirit: 1, will: 1, luck: 2 },
     respawnSec: 300,
     loot: [{ itemId: 'mana_potion', chance: 0.3 }],
     icon: 'pets',
@@ -161,11 +286,8 @@ export const MOBS = {
     description:
       'Облезлая тварь размером с собаку, обитающая в сырых подземельях. Опасна разве что числом и заразой.',
     level: 3,
-    hp: 40,
-    physicalAttack: 6,
-    magicAttack: 0,
-    armor: 2,
     xp: 15,
+    stats: { strength: 4, agility: 3, endurance: 4, intellect: 0, spirit: 1, will: 1, luck: 1 },
     respawnSec: 180,
     loot: [{ itemId: 'health_potion', chance: 0.2 }],
     icon: 'pest_control',
@@ -192,7 +314,7 @@ export const LOCATIONS = {
     type: 'normal',
     exits: ['haven', 'darkwood_clearing'],
     travel: { haven: 8, darkwood_clearing: 10 },
-    mobs: ['goblin', 'goblin', 'dire_wolf'],
+    mobs: ['forest_critter', 'forest_critter', 'young_goblin'],
     x: 360,
     y: 120,
   },
@@ -203,7 +325,7 @@ export const LOCATIONS = {
     type: 'normal',
     exits: ['darkwood'],
     travel: { darkwood: 10 },
-    mobs: ['goblin_chief', 'goblin'],
+    mobs: ['goblin', 'goblin', 'dire_wolf', 'goblin_chief'],
     x: 640,
     y: 120,
   },
@@ -270,32 +392,13 @@ export const MERCHANT_STOCK = [
 ];
 
 export function xpForLevel(level) {
-  return Math.floor(100 * Math.pow(1.5, level - 1));
-}
-
-export function calcMaxHp(player) {
-  return 80 + player.stats.endurance * 10 + player.level * 5;
-}
-
-export function calcMaxMana(player) {
-  return 50 + player.stats.wisdom * 8 + player.level * 3;
-}
-
-export function calcPhysicalDamage(player) {
-  return 10 + player.stats.strength * 2 + player.level;
-}
-
-export function calcMagicDamage(player) {
-  return 8 + player.stats.wisdom * 2 + player.level;
-}
-
-export function calcArmor(player) {
-  return player.stats.endurance + Math.floor(player.stats.agility / 2);
+  if (level >= MAX_LEVEL) return Infinity;
+  return Math.floor(100 * Math.pow(1.32, level - 1));
 }
 
 export function getItemBonuses(equipment) {
   const bonuses = {};
-  for (const itemId of Object.values(equipment)) {
+  for (const itemId of Object.values(equipment || {})) {
     if (!itemId) continue;
     const item = ITEMS[itemId];
     if (item?.bonuses) {
@@ -307,31 +410,112 @@ export function getItemBonuses(equipment) {
   return bonuses;
 }
 
-export function getEffectiveStats(player) {
-  const bonuses = getItemBonuses(player.equipment);
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+// Эффективные характеристики = базовые + бонусы экипировки + бонусы тренировки.
+export function getEffectiveStats(unit) {
+  const bonuses = getItemBonuses(unit.equipment);
+  const training = unit.training?.bonuses || {};
   const stats = {};
   for (const s of STATS) {
-    stats[s] = (player.stats[s] || 0) + (bonuses[s] || 0);
+    stats[s] = (unit.stats?.[s] || 0) + (bonuses[s] || 0) + (training[s] || 0);
   }
   return stats;
 }
 
-const MOB_NUMERIC_FIELDS = ['level', 'hp', 'physicalAttack', 'magicAttack', 'armor', 'xp', 'respawnSec'];
+/**
+ * Главный движок: из уровня и эффективных характеристик считает ВСЕ боевые
+ * показатели. Используется одинаково для игроков и мобов.
+ */
+export function deriveStats(level, eff) {
+  const lvl = Math.max(1, level || 1);
+  const s = eff;
+  const maxHp = Math.round(60 + s.endurance * 10 + lvl * 5);
+  const maxMana = Math.round(30 + s.spirit * 8 + lvl * 3);
+  const physDamage = Math.round(6 + s.strength * 2 + lvl * 0.5);
+  const magDamage = Math.round(5 + s.intellect * 2 + lvl * 0.5);
+  const physArmor = Math.round(s.endurance * 1.5 + s.agility * 0.3);
+  const magArmor = Math.round(s.spirit * 1.8 + s.intellect * 0.5);
+  const dodgeChance = clamp(s.agility * 0.006, 0, 0.35);
+  const critChance = clamp(0.03 + s.luck * 0.006, 0, 0.45);
+  const critDamageTakenReduction = clamp(s.luck * 0.005, 0, 0.5);
+  const inventoryCapacity = Math.round(30 + s.strength * 2);
+  // Сопротивляемость дебаффам: снижает шанс поймать дебафф и его длительность.
+  const debuffResist = clamp(s.will * 0.02 + s.luck * 0.004 + s.endurance * 0.004, 0, 0.85);
+  // Сила/длительность дебаффов, которые накладывает сам юнит (Дух).
+  const debuffApplyChance = clamp(0.2 + s.spirit * 0.01, 0, 0.9);
+  const debuffDurationMult = 1 + s.spirit * 0.03;
+  // Ясность рассудка: Воля защищает от безумия.
+  const madnessResist = clamp(s.will * 0.025, 0, 0.9);
+  // Тренировка в городе (раз в сутки): эффективность и макс. длительность.
+  const trainingPotency = 1 + s.will * 0.04;
+  const trainingMaxMinutes = Math.round(30 + s.will * 3);
+  return {
+    maxHp,
+    maxMana,
+    physDamage,
+    magDamage,
+    physArmor,
+    magArmor,
+    dodgeChance,
+    critChance,
+    critDamageTakenReduction,
+    critMultiplier: 1.5,
+    inventoryCapacity,
+    debuffResist,
+    debuffApplyChance,
+    debuffDurationMult,
+    madnessResist,
+    trainingPotency,
+    trainingMaxMinutes,
+  };
+}
+
+// Кривая брони: урон снижается, но никогда не до нуля.
+export function armorReduction(armor, attackerLevel) {
+  const k = 40 + (attackerLevel || 1) * 3;
+  return armor / (armor + k);
+}
+
+// Удобные обёртки для совместимости с остальным кодом.
+export function calcMaxHp(unit) {
+  return deriveStats(unit.level, getEffectiveStats(unit)).maxHp;
+}
+export function calcMaxMana(unit) {
+  return deriveStats(unit.level, getEffectiveStats(unit)).maxMana;
+}
+export function calcPhysicalDamage(unit) {
+  return deriveStats(unit.level, getEffectiveStats(unit)).physDamage;
+}
+export function calcMagicDamage(unit) {
+  return deriveStats(unit.level, getEffectiveStats(unit)).magDamage;
+}
+export function calcInventoryLimit(unit) {
+  return deriveStats(unit.level, getEffectiveStats(unit)).inventoryCapacity;
+}
 
 function sanitizeMob(id, raw = {}) {
-  const mob = {
+  const level = Math.max(1, Math.min(MAX_LEVEL, Math.round(Number(raw.level) || 1)));
+  const stats = {};
+  for (const s of STATS) {
+    const v = Math.max(0, Math.round(Number(raw.stats?.[s]) || 0));
+    stats[s] = v;
+  }
+  const xpValue = Number(raw.xp);
+  const respawn = Number(raw.respawnSec);
+  return {
     id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id,
     description: typeof raw.description === 'string' ? raw.description : '',
     icon: typeof raw.icon === 'string' && raw.icon ? raw.icon : 'smart_toy',
+    level,
+    xp: Number.isFinite(xpValue) ? Math.max(0, Math.round(xpValue)) : 0,
+    stats,
+    respawnSec: Number.isFinite(respawn) && respawn > 0 ? Math.round(respawn) : 300,
     loot: Array.isArray(raw.loot) ? raw.loot.filter((l) => l && l.itemId) : [],
   };
-  for (const field of MOB_NUMERIC_FIELDS) {
-    const value = Number(raw[field]);
-    mob[field] = Number.isFinite(value) ? value : 0;
-  }
-  if (!mob.respawnSec) mob.respawnSec = 300;
-  return mob;
 }
 
 function sanitizeLocation(id, raw = {}, knownMobIds) {
@@ -360,6 +544,13 @@ function sanitizeLocation(id, raw = {}, knownMobIds) {
   if (Array.isArray(raw.features)) loc.features = raw.features;
   if (typeof raw.dungeonId === 'string') loc.dungeonId = raw.dungeonId;
   return loc;
+}
+
+// Боевые показатели моба из его характеристик (у мобов нет экипировки).
+export function mobCombat(mob) {
+  const eff = {};
+  for (const s of STATS) eff[s] = mob.stats?.[s] || 0;
+  return { effectiveStats: eff, derived: deriveStats(mob.level, eff) };
 }
 
 /**

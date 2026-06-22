@@ -33,6 +33,7 @@ export interface GameContextValue {
   closeAllOverlays: () => void;
   send: (type: string, payload?: any) => void;
   login: (name: string) => Promise<void>;
+  loginGoogle: (credential: string) => Promise<void>;
   showToast: (msg: string) => void;
 }
 
@@ -157,19 +158,32 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [showToast, closeAllOverlays]
   );
 
+  // Общая часть: получив playerId, загружаем карту локаций и подключаем WebSocket.
+  const finishLogin = useCallback(
+    async (playerId: string) => {
+      let locData: Record<string, unknown>;
+      try {
+        const locRes = await fetch(`${API_URL}/api/static/locations`);
+        locData = await locRes.json();
+      } catch {
+        throw new Error('Не удалось загрузить карту локаций');
+      }
+      setLocations(locData);
+      playerIdRef.current = playerId;
+      connect(playerId);
+    },
+    [connect]
+  );
+
   const login = useCallback(
     async (name: string) => {
       let loginRes: Response;
-      let locRes: Response;
       try {
-        [loginRes, locRes] = await Promise.all([
-          fetch(`${API_URL}/api/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name }),
-          }),
-          fetch(`${API_URL}/api/static/locations`),
-        ]);
+        loginRes = await fetch(`${API_URL}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
       } catch {
         throw new Error(
           `Не удалось подключиться к серверу (${API_URL}). Запустите: npm run server`
@@ -184,19 +198,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!loginRes.ok) throw new Error(data.error ?? 'Ошибка входа');
-
-      let locData: Record<string, unknown>;
-      try {
-        locData = await locRes.json();
-      } catch {
-        throw new Error('Не удалось загрузить карту локаций');
-      }
-
-      setLocations(locData);
-      playerIdRef.current = data.playerId!;
-      connect(data.playerId!);
+      await finishLogin(data.playerId!);
     },
-    [connect]
+    [finishLogin]
+  );
+
+  const loginGoogle = useCallback(
+    async (credential: string) => {
+      let res: Response;
+      try {
+        res = await fetch(`${API_URL}/api/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential }),
+        });
+      } catch {
+        throw new Error(`Не удалось подключиться к серверу (${API_URL}).`);
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? 'Ошибка входа через Google');
+      await finishLogin(data.playerId);
+    },
+    [finishLogin]
   );
 
   const send = useCallback((type: string, payload?: any) => {
@@ -229,6 +252,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         closeAllOverlays,
         send,
         login,
+        loginGoogle,
         showToast,
       }}
     >

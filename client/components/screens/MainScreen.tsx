@@ -4,6 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useGame } from '@/context/GameContext';
 import { Card, PrimaryButton, RowItem, SectionTitle } from '@/components/ui';
 import { Popup } from '@/components/ui/Popup';
+import { StatSheet } from '@/components/ui/StatSheet';
 import { gameIcon } from '@/utils/icons';
 import { colors, radius, shadow, spacing } from '@/theme/colors';
 
@@ -123,7 +124,7 @@ export function MainScreen() {
                 <TouchableOpacity
                   key={mob.instanceId}
                   style={styles.mobRow}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                   onPress={() => setSelectedMob(mob)}
                 >
                   <View style={styles.mobAvatar}>
@@ -134,10 +135,16 @@ export function MainScreen() {
                       {mob.name}
                     </Text>
                     <Text style={styles.mobSub}>
-                      Ур. {mob.level} · {mob.hp} HP
+                      Ур. {mob.level} · {mob.maxHp ?? mob.hp} HP
                     </Text>
                   </View>
-                  <MaterialIcons name="info-outline" size={22} color={colors.textSecondary} />
+                  <TouchableOpacity
+                    style={styles.fightBtn}
+                    activeOpacity={0.8}
+                    onPress={() => send('start_battle', { mobInstanceId: mob.instanceId })}
+                  >
+                    <MaterialIcons name="sports-kabaddi" size={22} color={colors.onPrimary} />
+                  </TouchableOpacity>
                 </TouchableOpacity>
               ))}
             </Card>
@@ -199,14 +206,6 @@ function MobDetailPopup({
   onFight: (mob: any) => void;
 }) {
   if (!mob) return null;
-  const stats: { label: string; value: number; icon: keyof typeof MaterialIcons.glyphMap }[] = [
-    { label: 'Уровень', value: mob.level, icon: 'military-tech' },
-    { label: 'Здоровье', value: mob.hp, icon: 'favorite' },
-    { label: 'Физ. урон', value: mob.physicalAttack, icon: 'sports-martial-arts' },
-    { label: 'Маг. урон', value: mob.magicAttack, icon: 'whatshot' },
-    { label: 'Броня', value: mob.armor, icon: 'security' },
-    { label: 'Опыт', value: mob.xp, icon: 'star' },
-  ];
 
   return (
     <Popup visible={!!mob} onClose={onClose}>
@@ -216,21 +215,15 @@ function MobDetailPopup({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.mobPopupName}>{mob.name}</Text>
-          <Text style={styles.mobPopupLevel}>Монстр · Ур. {mob.level}</Text>
+          <Text style={styles.mobPopupLevel}>Монстр · Ур. {mob.level} · {mob.xp} опыта</Text>
         </View>
       </View>
 
       {mob.description ? <Text style={styles.mobPopupDesc}>{mob.description}</Text> : null}
 
-      <View style={styles.mobStatsGrid}>
-        {stats.map((s) => (
-          <View key={s.label} style={styles.mobStatCell}>
-            <MaterialIcons name={s.icon} size={16} color={colors.onSurfaceVariant} />
-            <Text style={styles.mobStatLabel}>{s.label}</Text>
-            <Text style={styles.mobStatValue}>{s.value}</Text>
-          </View>
-        ))}
-      </View>
+      <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator>
+        <StatSheet stats={mob.effectiveStats ?? mob.stats} derived={mob.derived} />
+      </ScrollView>
 
       <View style={styles.mobPopupActions}>
         <PrimaryButton label="Закрыть" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
@@ -477,6 +470,14 @@ const styles = StyleSheet.create({
   mobInfo: { flex: 1 },
   mobName: { fontSize: 16, color: colors.textPrimary, fontWeight: '500' },
   mobSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  fightBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   mobPopupHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: spacing.itemGap },
   mobPopupAvatar: {
     width: 56,

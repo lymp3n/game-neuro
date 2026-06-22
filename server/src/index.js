@@ -9,11 +9,13 @@ import { fileURLToPath } from 'url';
 import { world, ITEMS, SPELLS, LOCATIONS, DUNGEONS, STAT_LABELS } from './game/world.js';
 import { applyContent, exportContent } from './data/gameData.js';
 import { loadContent, saveContent } from './data/contentStore.js';
+import { dbEnabled, initDb, loadAllPlayers, upsertPlayer, countPlayers } from './db/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 
 const app = express();
 app.use(cors());
@@ -23,6 +25,40 @@ app.use(express.json({ limit: '2mb' }));
 loadContent();
 world.reloadContent();
 
+// ---- PostgreSQL persistence (optional, enabled via DATABASE_URL) ----
+async function setupDatabase() {
+  if (!dbEnabled) {
+    console.log('БД: DATABASE_URL не задан — игра работает в памяти.');
+    return;
+  }
+  try {
+    await initDb();
+    const players = await loadAllPlayers();
+    players.forEach((p) => world.hydratePlayer(p));
+    world.setPersistence(upsertPlayer);
+    if ((await countPlayers()) === 0) {
+      seedTestCharacters();
+      console.log('БД: добавлены тестовые персонажи.');
+    }
+    console.log(`БД: подключена, загружено игроков: ${players.length}.`);
+  } catch (err) {
+    console.error('БД: ошибка подключения, продолжаю в памяти:', err.message);
+  }
+}
+
+function seedTestCharacters() {
+  const samples = [
+    { name: 'Богатырь Илья', level: 12, xp: 0, stats: { strength: 14, agility: 4, endurance: 12, intellect: 2, spirit: 3, will: 5, luck: 4 } },
+    { name: 'Маг Аркан', level: 12, xp: 0, stats: { strength: 2, agility: 4, endurance: 6, intellect: 14, spirit: 12, will: 5, luck: 3 } },
+    { name: 'Плут Тень', level: 10, xp: 0, stats: { strength: 6, agility: 14, endurance: 6, intellect: 2, spirit: 2, will: 3, luck: 9 } },
+    { name: 'Новичок Гриша', level: 1, xp: 0, stats: { strength: 3, agility: 2, endurance: 3, intellect: 0, spirit: 1, will: 1, luck: 0 } },
+  ];
+  for (const s of samples) {
+    const player = world.createPlayer(s.name, { level: s.level, xp: s.xp, stats: s.stats });
+    world.persistPlayer(player);
+  }
+}
+
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 app.post('/api/login', (req, res) => {
@@ -30,6 +66,27 @@ app.post('/api/login', (req, res) => {
   if (!name?.trim()) return res.status(400).json({ error: 'Введите имя' });
   const player = world.login(name.trim());
   res.json({ playerId: player.id, name: player.name });
+});
+
+// ---- Google Sign-In (optional, enabled via GOOGLE_CLIENT_ID) ----
+app.get('/api/auth/google/config', (_, res) =>
+  res.json({ enabled: !!GOOGLE_CLIENT_ID, clientId: GOOGLE_CLIENT_ID })
+);
+
+app.post('/api/auth/google', async (req, res) => {
+  if (!GOOGLE_CLIENT_ID) return res.status(400).json({ error: 'Google-вход не настроен' });
+  const { credential } = req.body || {};
+  if (!credential) return res.status(400).json({ error: 'Нет токена Google' });
+  try {
+    const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+    if (!resp.ok) return res.status(401).json({ error: 'Недействительный токен Google' });
+    const info = await resp.json();
+    if (info.aud !== GOOGLE_CLIENT_ID) return res.status(401).json({ error: 'Токен для другого приложения' });
+    const player = world.loginWithGoogle({ googleId: info.sub, email: info.email, name: info.name });
+    res.json({ playerId: player.id, name: player.name });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка проверки Google: ' + err.message });
+  }
 });
 
 app.get('/api/static/items', (_, res) => res.json(ITEMS));
@@ -80,6 +137,8 @@ if (fs.existsSync(webClientDir)) {
     res.sendFile(path.join(webClientDir, 'index.html'));
   });
 }
+
+setupDatabase();
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });

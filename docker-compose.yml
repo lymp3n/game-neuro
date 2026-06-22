@@ -1,0 +1,26 @@
+version: "3.9"
+
+# Локальная PostgreSQL для разработки.
+# Запуск:  docker compose up -d
+# Строка подключения: postgresql://textquest:textquest@localhost:5432/textquest
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: textquest-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: textquest
+      POSTGRES_PASSWORD: textquest
+      POSTGRES_DB: textquest
+    ports:
+      - "5432:5432"
+    volumes:
+      - textquest_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U textquest"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  textquest_pg:
