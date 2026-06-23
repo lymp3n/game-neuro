@@ -1,4 +1,15 @@
+import {
+  getFormulas,
+  applyFormulas,
+  exportFormulas,
+  armorReduction as formulaArmorReduction,
+  rollDamage,
+} from './formulaConfig.js';
+
 export const STATS = ['strength', 'agility', 'endurance', 'intellect', 'spirit', 'will', 'luck'];
+
+export const MOB_BEHAVIOR_TYPES = ['normal', 'aggressive', 'collective'];
+export const ATTACK_STYLES = ['melee', 'ranged', 'magic'];
 
 export const STAT_LABELS = {
   strength: 'Сила',
@@ -222,6 +233,8 @@ export const MOBS = {
     level: 1,
     xp: 8,
     stats: { strength: 3, agility: 4, endurance: 1, intellect: 0, spirit: 0, will: 1, luck: 1 },
+    behaviorType: 'normal',
+    attackStyle: 'melee',
     respawnSec: 120,
     loot: [{ itemId: 'health_potion', chance: 0.2 }],
     icon: 'pets',
@@ -233,6 +246,8 @@ export const MOBS = {
     level: 2,
     xp: 14,
     stats: { strength: 4, agility: 3, endurance: 2, intellect: 0, spirit: 1, will: 1, luck: 1 },
+    behaviorType: 'aggressive',
+    attackStyle: 'melee',
     respawnSec: 180,
     loot: [{ itemId: 'health_potion', chance: 0.3 }],
     icon: 'smart_toy',
@@ -245,6 +260,8 @@ export const MOBS = {
     level: 4,
     xp: 25,
     stats: { strength: 5, agility: 3, endurance: 4, intellect: 0, spirit: 1, will: 1, luck: 2 },
+    behaviorType: 'collective',
+    attackStyle: 'melee',
     respawnSec: 300,
     loot: [
       { itemId: 'health_potion', chance: 0.4 },
@@ -276,6 +293,8 @@ export const MOBS = {
     level: 7,
     xp: 45,
     stats: { strength: 6, agility: 7, endurance: 5, intellect: 0, spirit: 1, will: 1, luck: 2 },
+    behaviorType: 'aggressive',
+    attackStyle: 'melee',
     respawnSec: 300,
     loot: [{ itemId: 'mana_potion', chance: 0.3 }],
     icon: 'pets',
@@ -379,6 +398,7 @@ export const DUNGEONS = {
       },
     },
     startLocationId: 'd1_start',
+    bossLocationId: 'd1_boss',
   },
 };
 
@@ -430,39 +450,50 @@ export function getEffectiveStats(unit) {
  * показатели. Используется одинаково для игроков и мобов.
  */
 export function deriveStats(level, eff) {
+  const f = getFormulas();
   const lvl = Math.max(1, level || 1);
   const s = eff;
-  const maxHp = Math.round(60 + s.endurance * 10 + lvl * 5);
-  const maxMana = Math.round(30 + s.spirit * 8 + lvl * 3);
-  const physDamage = Math.round(6 + s.strength * 2 + lvl * 0.5);
-  const magDamage = Math.round(5 + s.intellect * 2 + lvl * 0.5);
-  const physArmor = Math.round(s.endurance * 1.5 + s.agility * 0.3);
-  const magArmor = Math.round(s.spirit * 1.8 + s.intellect * 0.5);
-  const dodgeChance = clamp(s.agility * 0.006, 0, 0.35);
-  const critChance = clamp(0.03 + s.luck * 0.006, 0, 0.45);
-  const critDamageTakenReduction = clamp(s.luck * 0.005, 0, 0.5);
-  const inventoryCapacity = Math.round(30 + s.strength * 2);
-  // Сопротивляемость дебаффам: снижает шанс поймать дебафф и его длительность.
-  const debuffResist = clamp(s.will * 0.02 + s.luck * 0.004 + s.endurance * 0.004, 0, 0.85);
-  // Сила/длительность дебаффов, которые накладывает сам юнит (Дух).
-  const debuffApplyChance = clamp(0.2 + s.spirit * 0.01, 0, 0.9);
-  const debuffDurationMult = 1 + s.spirit * 0.03;
-  // Ясность рассудка: Воля защищает от безумия.
-  const madnessResist = clamp(s.will * 0.025, 0, 0.9);
-  // Тренировка в городе (раз в сутки): эффективность и макс. длительность.
-  const trainingPotency = 1 + s.will * 0.04;
-  const trainingMaxMinutes = Math.round(30 + s.will * 3);
+  const maxHp = Math.round(f.hpBase + s.endurance * f.hpPerEndurance + lvl * f.hpPerLevel);
+  const maxMana = Math.round(f.manaBase + s.spirit * f.manaPerSpirit + lvl * f.manaPerLevel);
+  const meleeDamage = Math.round(
+    f.meleeBase + s.strength * f.meleePerStrength + s.agility * f.meleePerAgility + lvl * f.meleePerLevel
+  );
+  const rangedDamage = Math.round(
+    f.rangedBase + s.agility * f.rangedPerAgility + s.strength * f.rangedPerStrength + lvl * f.rangedPerLevel
+  );
+  const magDamage = Math.round(
+    f.magicBase + s.intellect * f.magicPerIntellect + s.spirit * f.magicPerSpirit + lvl * f.magicPerLevel
+  );
+  const physDamage = Math.max(meleeDamage, rangedDamage);
+  const physArmor = Math.round(s.endurance * f.physArmorPerEndurance + s.agility * f.physArmorPerAgility);
+  const magArmor = Math.round(s.spirit * f.magArmorPerSpirit + s.intellect * f.magArmorPerIntellect);
+  const dodgeChance = clamp(s.agility * f.dodgePerAgility, 0, f.dodgeMax);
+  const critChance = clamp(f.critBase + s.luck * f.critPerLuck, 0, f.critMax);
+  const critDamageTakenReduction = clamp(s.luck * f.critReductionPerLuck, 0, f.critReductionMax);
+  const inventoryCapacity = Math.round(f.inventoryBase + s.strength * f.inventoryPerStrength);
+  const debuffResist = clamp(
+    s.will * f.debuffResistPerWill + s.luck * f.debuffResistPerLuck + s.endurance * f.debuffResistPerEndurance,
+    0,
+    f.debuffResistMax
+  );
+  const debuffApplyChance = clamp(f.debuffApplyBase + s.spirit * f.debuffApplyPerSpirit, 0, f.debuffApplyMax);
+  const debuffDurationMult = 1 + s.spirit * f.debuffDurationPerSpirit;
+  const madnessResist = clamp(s.will * f.madnessResistPerWill, 0, f.madnessResistMax);
+  const trainingPotency = 1 + s.will * f.trainingPotencyPerWill;
+  const trainingMaxMinutes = Math.round(f.trainingMinutesBase + s.will * f.trainingMinutesPerWill);
   return {
     maxHp,
     maxMana,
     physDamage,
+    meleeDamage,
+    rangedDamage,
     magDamage,
     physArmor,
     magArmor,
     dodgeChance,
     critChance,
     critDamageTakenReduction,
-    critMultiplier: 1.5,
+    critMultiplier: f.critMultiplier,
     inventoryCapacity,
     debuffResist,
     debuffApplyChance,
@@ -470,14 +501,18 @@ export function deriveStats(level, eff) {
     madnessResist,
     trainingPotency,
     trainingMaxMinutes,
+    meleeDamageSpread: f.meleeDamageSpread,
+    rangedDamageSpread: f.rangedDamageSpread,
+    magicDamageSpread: f.magicDamageSpread,
   };
 }
 
 // Кривая брони: урон снижается, но никогда не до нуля.
 export function armorReduction(armor, attackerLevel) {
-  const k = 40 + (attackerLevel || 1) * 3;
-  return armor / (armor + k);
+  return formulaArmorReduction(armor, attackerLevel, getFormulas());
 }
+
+export { rollDamage };
 
 // Удобные обёртки для совместимости с остальным кодом.
 export function calcMaxHp(unit) {
@@ -505,6 +540,8 @@ function sanitizeMob(id, raw = {}) {
   }
   const xpValue = Number(raw.xp);
   const respawn = Number(raw.respawnSec);
+  const behaviorType = MOB_BEHAVIOR_TYPES.includes(raw.behaviorType) ? raw.behaviorType : 'normal';
+  const attackStyle = ATTACK_STYLES.includes(raw.attackStyle) ? raw.attackStyle : 'melee';
   return {
     id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id,
@@ -513,6 +550,8 @@ function sanitizeMob(id, raw = {}) {
     level,
     xp: Number.isFinite(xpValue) ? Math.max(0, Math.round(xpValue)) : 0,
     stats,
+    behaviorType,
+    attackStyle,
     respawnSec: Number.isFinite(respawn) && respawn > 0 ? Math.round(respawn) : 300,
     loot: Array.isArray(raw.loot) ? raw.loot.filter((l) => l && l.itemId) : [],
   };
@@ -560,6 +599,27 @@ export function exportContent() {
   return {
     mobs: JSON.parse(JSON.stringify(MOBS)),
     locations: JSON.parse(JSON.stringify(LOCATIONS)),
+    dungeons: JSON.parse(JSON.stringify(DUNGEONS)),
+    formulas: exportFormulas(),
+  };
+}
+
+function sanitizeDungeon(id, raw = {}, knownMobIds) {
+  const locations = {};
+  if (raw.locations && typeof raw.locations === 'object') {
+    for (const [lid, locRaw] of Object.entries(raw.locations)) {
+      locations[lid] = sanitizeLocation(lid, locRaw, knownMobIds);
+      locations[lid].type = 'dungeon';
+    }
+  }
+  return {
+    id,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id,
+    requiredSize: Math.max(1, Math.round(Number(raw.requiredSize) || 1)),
+    passItemId: typeof raw.passItemId === 'string' ? raw.passItemId : 'dungeon_pass',
+    startLocationId: typeof raw.startLocationId === 'string' ? raw.startLocationId : Object.keys(locations)[0],
+    locations,
+    bossLocationId: typeof raw.bossLocationId === 'string' ? raw.bossLocationId : undefined,
   };
 }
 
@@ -572,6 +632,11 @@ export function applyContent(content = {}) {
   const incomingMobs = content.mobs && typeof content.mobs === 'object' ? content.mobs : {};
   const incomingLocations =
     content.locations && typeof content.locations === 'object' ? content.locations : {};
+  const incomingDungeons = content.dungeons && typeof content.dungeons === 'object' ? content.dungeons : {};
+
+  if (content.formulas && typeof content.formulas === 'object') {
+    applyFormulas(content.formulas);
+  }
 
   for (const key of Object.keys(MOBS)) delete MOBS[key];
   for (const [id, raw] of Object.entries(incomingMobs)) {
@@ -582,6 +647,11 @@ export function applyContent(content = {}) {
   for (const key of Object.keys(LOCATIONS)) delete LOCATIONS[key];
   for (const [id, raw] of Object.entries(incomingLocations)) {
     LOCATIONS[id] = sanitizeLocation(id, raw, knownMobIds);
+  }
+
+  for (const key of Object.keys(DUNGEONS)) delete DUNGEONS[key];
+  for (const [id, raw] of Object.entries(incomingDungeons)) {
+    DUNGEONS[id] = sanitizeDungeon(id, raw, knownMobIds);
   }
 
   return exportContent();

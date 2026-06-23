@@ -61,6 +61,44 @@ function seedTestCharacters() {
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
+// ---- Демо-вход (имитация Google) + аккаунт с до 3 персонажей ----
+app.post('/api/auth/demo-google', (req, res) => {
+  const account = world.createAccount({
+    provider: 'demo-google',
+    email: req.body?.email || 'demo@textquest.local',
+    displayName: req.body?.name || 'Игрок Google',
+  });
+  res.json({
+    accountId: account.id,
+    displayName: account.displayName,
+    characters: world.listAccountCharacters(account.id),
+    maxCharacters: 3,
+  });
+});
+
+app.get('/api/account/:accountId/characters', (req, res) => {
+  const account = world.getAccount(req.params.accountId);
+  if (!account) return res.status(404).json({ error: 'Аккаунт не найден' });
+  res.json({
+    accountId: account.id,
+    displayName: account.displayName,
+    characters: world.listAccountCharacters(account.id),
+    maxCharacters: 3,
+  });
+});
+
+app.post('/api/account/:accountId/characters', (req, res) => {
+  const result = world.createCharacterForAccount(req.params.accountId, req.body?.name);
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
+app.post('/api/account/:accountId/select', (req, res) => {
+  const result = world.selectCharacter(req.params.accountId, req.body?.playerId);
+  if (result.error) return res.status(400).json(result);
+  res.json(result);
+});
+
 app.post('/api/login', (req, res) => {
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Введите имя' });

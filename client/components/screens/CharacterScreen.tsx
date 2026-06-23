@@ -165,7 +165,8 @@ export function CharacterScreen() {
         <View style={styles.previewCard}>
           <PreviewRow label="Здоровье" value={preview.maxHp} icon="favorite" />
           <PreviewRow label="Мана" value={preview.maxMana} icon="water-drop" />
-          <PreviewRow label="Физ. урон" value={preview.physDamage} icon="sports-martial-arts" />
+          <PreviewRow label="Ближний урон" value={preview.meleeDamage} icon="sports-martial-arts" />
+          <PreviewRow label="Дальний урон" value={preview.rangedDamage} icon="my-location" />
           <PreviewRow label="Маг. урон" value={preview.magDamage} icon="auto-fix-high" />
           <PreviewRow label="Физ. защита" value={preview.physArmor} icon="shield" />
           <PreviewRow label="Маг. защита" value={preview.magArmor} icon="security" />

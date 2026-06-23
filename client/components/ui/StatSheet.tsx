@@ -21,7 +21,8 @@ export function StatSheet({
   const combat: { label: string; value: string; icon: keyof typeof MaterialIcons.glyphMap }[] = [
     { label: 'Здоровье', value: String(derived.maxHp), icon: 'favorite' },
     { label: 'Мана', value: String(derived.maxMana), icon: 'water-drop' },
-    { label: 'Физ. урон', value: String(derived.physDamage), icon: 'sports-martial-arts' },
+    { label: 'Ближний урон', value: String(derived.meleeDamage ?? derived.physDamage), icon: 'sports-martial-arts' },
+    { label: 'Дальний урон', value: String(derived.rangedDamage ?? derived.physDamage), icon: 'my-location' },
     { label: 'Маг. урон', value: String(derived.magDamage), icon: 'auto-fix-high' },
     { label: 'Физ. защита', value: String(derived.physArmor), icon: 'shield' },
     { label: 'Маг. защита', value: String(derived.magArmor), icon: 'security' },

@@ -8,7 +8,7 @@ import { gameIcon } from '@/utils/icons';
 import { colors, radius, shadow, spacing } from '@/theme/colors';
 
 export function BattleScreen() {
-  const { player, battle, spells, items, closeAllOverlays, send } = useGame();
+  const { player, battle, spells, items, closeAllOverlays, send, showToast, battleErrorTick } = useGame();
   const [spellPopup, setSpellPopup] = useState(false);
   const [potionPopup, setPotionPopup] = useState(false);
   const [infoTarget, setInfoTarget] = useState<'player' | 'mob' | null>(null);
@@ -26,12 +26,19 @@ export function BattleScreen() {
     setActionLock(false);
     setSpellPopup(false);
     setPotionPopup(false);
-  }, [battle?.turnEndsAt]);
+  }, [battle?.turnEndsAt, battleErrorTick]);
 
   const canAct = battle?.status === 'active' && !hasActed && !actionLock;
 
   const doAction = (payload: object) => {
     if (!canAct) return;
+    if (payload.type === 'spell' && 'spellId' in payload) {
+      const spell = spells[(payload as any).spellId];
+      if (spell && player.mana < spell.manaCost) {
+        showToast('Недостаточно маны');
+        return;
+      }
+    }
     setActionLock(true);
     send('battle_action', payload);
   };
@@ -119,7 +126,8 @@ export function BattleScreen() {
         <View style={styles.actionsWrap}>
           {hasActed ? <Text style={styles.waitHint}>Ход сделан — ждите следующий раунд ({turnLeft}с)</Text> : null}
           <View style={styles.actions}>
-          <ActionBtn icon="sports-martial-arts" label="Атака" disabled={!canAct} onPress={() => doAction({ type: 'attack' })} />
+          <ActionBtn icon="sports-martial-arts" label="Ближний" disabled={!canAct} onPress={() => doAction({ type: 'attack', attackStyle: 'melee' })} />
+          <ActionBtn icon="my-location" label="Дальний" disabled={!canAct} onPress={() => doAction({ type: 'attack', attackStyle: 'ranged' })} />
           <ActionBtn icon="auto-fix-high" label="Заклинание" disabled={!canAct} onPress={() => setSpellPopup(true)} />
           <ActionBtn icon="science" label="Зелье" disabled={!canAct} onPress={() => setPotionPopup(true)} />
           </View>
@@ -130,19 +138,28 @@ export function BattleScreen() {
         {spellSlots.length === 0 ? (
           <Text style={styles.emptyPopup}>Нет заклинаний в слотах</Text>
         ) : (
-          spellSlots.map((id) => (
+          spellSlots.map((id) => {
+            const spell = spells[id];
+            const enoughMana = player.mana >= (spell?.manaCost ?? 0);
+            return (
             <TouchableOpacity
               key={id}
-              style={styles.popupItem}
+              style={[styles.popupItem, !enoughMana && styles.popupItemDisabled]}
+              disabled={!enoughMana}
               onPress={() => {
+                if (player.mana < spell.manaCost) {
+                  showToast('Недостаточно маны');
+                  return;
+                }
                 doAction({ type: 'spell', spellId: id });
                 setSpellPopup(false);
               }}
             >
-              <Text style={styles.popupItemText}>{spells[id]?.name}</Text>
-              <Text style={styles.popupMeta}>{spells[id]?.manaCost} маны</Text>
+              <Text style={styles.popupItemText}>{spell?.name}</Text>
+              <Text style={styles.popupMeta}>{spell?.manaCost} маны {enoughMana ? '' : '· не хватает'}</Text>
             </TouchableOpacity>
-          ))
+            );
+          })
         )}
       </Popup>
 
@@ -295,6 +312,7 @@ const styles = StyleSheet.create({
   actionLabel: { fontSize: 12, fontWeight: '700', color: colors.onSurfaceVariant },
   emptyPopup: { textAlign: 'center', color: colors.textSecondary, padding: 20 },
   popupItem: { padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.outlineVariant },
+  popupItemDisabled: { opacity: 0.45 },
   popupItemText: { fontSize: 16, color: colors.textPrimary },
   popupMeta: { fontSize: 12, color: colors.textSecondary },
 });

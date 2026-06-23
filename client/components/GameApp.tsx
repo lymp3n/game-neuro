@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGame } from '@/context/GameContext';
 import { LoginScreen } from '@/components/screens/LoginScreen';
+import { CharacterSelectScreen } from '@/components/screens/CharacterSelectScreen';
 import { MainScreen } from '@/components/screens/MainScreen';
 import { CharacterScreen } from '@/components/screens/CharacterScreen';
 import { SpellScreen } from '@/components/screens/SpellScreen';
@@ -12,13 +13,18 @@ import { DungeonScreen } from '@/components/screens/DungeonScreen';
 import { ChatScreen } from '@/components/screens/ChatScreen';
 import { BattleScreen } from '@/components/screens/BattleScreen';
 import { BattleResultScreen } from '@/components/screens/BattleResultScreen';
+import { TutorialOverlay } from '@/components/TutorialOverlay';
 import { colors, radius, shadow } from '@/theme/colors';
 
 export function GameApp() {
-  const { player, overlay, toast, connected } = useGame();
+  const { account, player, overlay, toast, connected } = useGame();
+
+  if (!account) {
+    return <LoginScreen />;
+  }
 
   if (!player) {
-    return <LoginScreen />;
+    return <CharacterSelectScreen />;
   }
 
   return (
@@ -33,6 +39,8 @@ export function GameApp() {
       {overlay === 'chat' ? <ChatScreen /> : null}
       {overlay === 'battle' ? <BattleScreen /> : null}
       {overlay === 'battle_result' ? <BattleResultScreen /> : null}
+
+      <TutorialOverlay />
 
       {!connected ? (
         <View style={styles.offline}>

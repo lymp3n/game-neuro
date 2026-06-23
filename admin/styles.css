@@ -224,3 +224,43 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-2);
   .sidebar { width: 220px; }
   .legend { display: none; }
 }
+
+.admin-tabs { display: flex; gap: 4px; margin-right: 8px; }
+.tab-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.admin-panel.hidden { display: none; }
+.panel-inner { padding: 20px; max-width: 960px; }
+.formulas-table {
+  display: grid;
+  grid-template-columns: 1fr 120px 200px;
+  gap: 6px 12px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+.formulas-table label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.formulas-table input { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.formula-desc { font-size: 11px; color: var(--text-2); }
+.dungeon-list { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.dungeon-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.dungeon-loc-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.dungeon-loc-row input, .dungeon-loc-row select { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); }

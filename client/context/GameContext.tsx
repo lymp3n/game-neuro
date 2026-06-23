@@ -15,6 +15,8 @@ export type Overlay =
 
 export interface GameContextValue {
   player: any;
+  account: { id: string; displayName: string; maxCharacters: number } | null;
+  characters: any[];
   location: any;
   locations: Record<string, any>;
   chat: any[];
@@ -26,14 +28,17 @@ export interface GameContextValue {
   overlayStack: Overlay[];
   battle: any;
   toast: string | null;
+  battleErrorTick: number;
   dungeonGroups: any[];
   inventoryFilter: string | null;
   openOverlay: (o: Overlay, opts?: { inventoryFilter?: string | null }) => void;
   closeOverlay: () => void;
   closeAllOverlays: () => void;
   send: (type: string, payload?: any) => void;
-  login: (name: string) => Promise<void>;
-  loginGoogle: (credential: string) => Promise<void>;
+  loginDemoGoogle: () => Promise<void>;
+  createCharacter: (name: string) => Promise<void>;
+  selectCharacter: (playerId: string) => Promise<void>;
+  logoutAccount: () => void;
   showToast: (msg: string) => void;
 }
 
@@ -41,6 +46,8 @@ const GameContext = createContext<GameContextValue | null>(null);
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [player, setPlayer] = useState<any>(null);
+  const [account, setAccount] = useState<GameContextValue['account']>(null);
+  const [characters, setCharacters] = useState<any[]>([]);
   const [location, setLocation] = useState<any>(null);
   const [locations, setLocations] = useState<Record<string, any>>({});
   const [chat, setChat] = useState<any[]>([]);
@@ -51,6 +58,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [overlayStack, setOverlayStack] = useState<Overlay[]>([]);
   const [battle, setBattle] = useState<any>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [battleErrorTick, setBattleErrorTick] = useState(0);
   const [dungeonGroups, setDungeonGroups] = useState<any[]>([]);
   const [inventoryFilter, setInventoryFilter] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -151,6 +159,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             break;
           case 'error':
             showToast(msg.data);
+            setBattleErrorTick((n) => n + 1);
             break;
         }
       };
@@ -175,52 +184,72 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [connect]
   );
 
-  const login = useCallback(
+  const loginDemoGoogle = useCallback(async () => {
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/api/auth/demo-google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    } catch {
+      throw new Error(`Не удалось подключиться к серверу (${API_URL}). Запустите: npm run server`);
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? 'Ошибка входа');
+    setAccount({
+      id: data.accountId,
+      displayName: data.displayName,
+      maxCharacters: data.maxCharacters ?? 3,
+    });
+    setCharacters(data.characters ?? []);
+  }, []);
+
+  const refreshCharacters = useCallback(async (accountId: string) => {
+    const res = await fetch(`${API_URL}/api/account/${accountId}/characters`);
+    const data = await res.json();
+    if (res.ok) setCharacters(data.characters ?? []);
+  }, []);
+
+  const createCharacter = useCallback(
     async (name: string) => {
-      let loginRes: Response;
-      try {
-        loginRes = await fetch(`${API_URL}/api/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-      } catch {
-        throw new Error(
-          `Не удалось подключиться к серверу (${API_URL}). Запустите: npm run server`
-        );
-      }
-
-      let data: { error?: string; playerId?: string };
-      try {
-        data = await loginRes.json();
-      } catch {
-        throw new Error('Сервер вернул некорректный ответ');
-      }
-
-      if (!loginRes.ok) throw new Error(data.error ?? 'Ошибка входа');
-      await finishLogin(data.playerId!);
+      if (!account) throw new Error('Нет аккаунта');
+      const res = await fetch(`${API_URL}/api/account/${account.id}/characters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Ошибка создания');
+      await refreshCharacters(account.id);
     },
-    [finishLogin]
+    [account, refreshCharacters]
   );
 
-  const loginGoogle = useCallback(
-    async (credential: string) => {
-      let res: Response;
-      try {
-        res = await fetch(`${API_URL}/api/auth/google`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credential }),
-        });
-      } catch {
-        throw new Error(`Не удалось подключиться к серверу (${API_URL}).`);
-      }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? 'Ошибка входа через Google');
-      await finishLogin(data.playerId);
+  const selectCharacter = useCallback(
+    async (playerId: string) => {
+      if (!account) throw new Error('Нет аккаунта');
+      const res = await fetch(`${API_URL}/api/account/${account.id}/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Ошибка выбора');
+      await finishLogin(playerId);
     },
-    [finishLogin]
+    [account, finishLogin]
   );
+
+  const logoutAccount = useCallback(() => {
+    wsRef.current?.close();
+    setPlayer(null);
+    setAccount(null);
+    setCharacters([]);
+    setConnected(false);
+    playerIdRef.current = null;
+    closeAllOverlays();
+  }, [closeAllOverlays]);
 
   const send = useCallback((type: string, payload?: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -234,6 +263,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     <GameContext.Provider
       value={{
         player,
+        account,
+        characters,
         location,
         locations,
         chat,
@@ -245,14 +276,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         overlayStack,
         battle,
         toast,
+        battleErrorTick,
         dungeonGroups,
         inventoryFilter,
         openOverlay,
         closeOverlay,
         closeAllOverlays,
         send,
-        login,
-        loginGoogle,
+        loginDemoGoogle,
+        createCharacter,
+        selectCharacter,
+        logoutAccount,
         showToast,
       }}
     >

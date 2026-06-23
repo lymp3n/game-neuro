@@ -5,7 +5,8 @@
   const DEFAULT_TRAVEL = 8;
 
   const state = {
-    content: { mobs: {}, locations: {} },
+    content: { mobs: {}, locations: {}, dungeons: {}, formulas: {} },
+    activeTab: 'world',
     token: localStorage.getItem('adminToken') || '',
     dirty: false,
     editingLocId: null,
@@ -90,6 +91,8 @@
       state.content = await res.json();
       if (!state.content.mobs) state.content.mobs = {};
       if (!state.content.locations) state.content.locations = {};
+      if (!state.content.dungeons) state.content.dungeons = {};
+      if (!state.content.formulas) state.content.formulas = {};
       state.dirty = false;
       hideTokenGate();
       renderAll();
@@ -119,6 +122,111 @@
     renderMobList();
     renderNodes();
     renderEdges();
+    renderFormulas();
+    renderDungeons();
+  }
+
+  const FORMULA_META = {
+    hpBase: 'База HP',
+    hpPerEndurance: 'HP × Выносливость',
+    hpPerLevel: 'HP × уровень',
+    manaBase: 'База маны',
+    manaPerSpirit: 'Мана × Дух',
+    manaPerLevel: 'Мана × уровень',
+    meleeBase: 'База ближнего урона',
+    meleePerStrength: 'Ближний × Сила',
+    meleePerAgility: 'Ближний × Ловкость',
+    meleePerLevel: 'Ближний × уровень',
+    rangedBase: 'База дальнего урона',
+    rangedPerAgility: 'Дальний × Ловкость',
+    rangedPerStrength: 'Дальний × Сила',
+    rangedPerLevel: 'Дальний × уровень',
+    magicBase: 'База маг. урона',
+    magicPerIntellect: 'Маг × Интеллект',
+    magicPerSpirit: 'Маг × Дух',
+    magicPerLevel: 'Маг × уровень',
+    meleeDamageSpread: 'Разброс ближнего (0.15 = ±15%)',
+    rangedDamageSpread: 'Разброс дальнего',
+    magicDamageSpread: 'Разброс магического',
+    aggressiveJoinChancePerSec: 'Шанс вмешаться агрессивный/сек',
+    aggressiveForceAfterSec: 'Сек до 100% агрессии',
+    collectiveJoinChancePerSec: 'Шанс вмешаться коллективный/сек',
+  };
+
+  function renderFormulas() {
+    const el = $('formulasTable');
+    if (!el) return;
+    const f = state.content.formulas || {};
+    el.innerHTML = '';
+    for (const [key, label] of Object.entries(FORMULA_META)) {
+      const wrap = document.createElement('label');
+      wrap.innerHTML = `<span>${label}</span><span class="formula-desc">${key}</span>`;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = 'any';
+      input.value = f[key] ?? '';
+      input.addEventListener('input', () => {
+        state.content.formulas[key] = +input.value;
+        markDirty();
+      });
+      el.appendChild(wrap);
+      el.appendChild(document.createElement('div'));
+      el.appendChild(input);
+    }
+  }
+
+  function renderDungeons() {
+    const el = $('dungeonList');
+    if (!el) return;
+    el.innerHTML = '';
+    const dungeons = state.content.dungeons || {};
+    for (const [id, d] of Object.entries(dungeons)) {
+      const card = document.createElement('div');
+      card.className = 'dungeon-card';
+      card.innerHTML = `<strong>${escapeHtml(d.name || id)}</strong> <small>(${id})</small>`;
+      const locs = d.locations || {};
+      for (const [lid, loc] of Object.entries(locs)) {
+        const row = document.createElement('div');
+        row.className = 'dungeon-loc-row';
+        const mobOpts = Object.keys(state.content.mobs)
+          .map((mid) => `<option value="${mid}">${escapeHtml(state.content.mobs[mid].name)}</option>`)
+          .join('');
+        row.innerHTML = `
+          <input type="text" value="${escapeAttr(loc.name || lid)}" data-dungeon="${id}" data-loc="${lid}" data-field="name" placeholder="Название" />
+          <select data-dungeon="${id}" data-loc="${lid}" data-field="mobs" multiple size="2">${mobOpts}</select>
+          <label><input type="checkbox" data-dungeon="${id}" data-loc="${lid}" data-field="boss" ${d.bossLocationId === lid ? 'checked' : ''} /> Босс</label>
+        `;
+        const sel = row.querySelector('select');
+        for (const opt of sel.options) {
+          if ((loc.mobs || []).includes(opt.value)) opt.selected = true;
+        }
+        card.appendChild(row);
+      }
+      card.querySelectorAll('input, select').forEach((inp) => {
+        inp.addEventListener('change', () => {
+          const dungeon = state.content.dungeons[inp.dataset.dungeon];
+          const loc = dungeon.locations[inp.dataset.loc];
+          if (inp.dataset.field === 'name') loc.name = inp.value;
+          if (inp.dataset.field === 'boss' && inp.checked) dungeon.bossLocationId = inp.dataset.loc;
+          if (inp.dataset.field === 'mobs') {
+            loc.mobs = [...inp.selectedOptions].map((o) => o.value);
+          }
+          markDirty();
+        });
+      });
+      el.appendChild(card);
+    }
+  }
+
+  function switchTab(tab) {
+    state.activeTab = tab;
+    $('panelWorld').classList.toggle('hidden', tab !== 'world');
+    $('panelFormulas').classList.toggle('hidden', tab !== 'formulas');
+    $('panelDungeons').classList.toggle('hidden', tab !== 'dungeons');
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    if (tab === 'world') $('tabWorld').classList.add('active');
+    if (tab === 'formulas') $('tabFormulas').classList.add('active');
+    if (tab === 'dungeons') $('tabDungeons').classList.add('active');
   }
 
   function renderMobList() {
@@ -547,6 +655,8 @@
     $('mobLevel').value = mob.level ?? 1;
     $('mobXp').value = mob.xp ?? 20;
     for (const s of MOB_STATS) $('stat_' + s).value = mob.stats?.[s] ?? 0;
+    $('mobBehavior').value = mob.behaviorType || 'normal';
+    $('mobAttackStyle').value = mob.attackStyle || 'melee';
     $('mobIcon').value = mob.icon || 'smart_toy';
     $('deleteMobBtn').style.display = isNew ? 'none' : '';
     updateMobHints();
@@ -564,6 +674,8 @@
       level: +$('mobLevel').value || 1,
       xp: +$('mobXp').value || 0,
       stats: readMobStats(),
+      behaviorType: $('mobBehavior').value,
+      attackStyle: $('mobAttackStyle').value,
       icon: $('mobIcon').value.trim() || 'smart_toy',
     };
     let id = state.editingMobId;
@@ -646,6 +758,26 @@
   }
 
   // ---------- events ----------
+  $('tabWorld').addEventListener('click', () => switchTab('world'));
+  $('tabFormulas').addEventListener('click', () => switchTab('formulas'));
+  $('tabDungeons').addEventListener('click', () => switchTab('dungeons'));
+  $('addDungeonBtn')?.addEventListener('click', () => {
+    const id = uniqueId('dungeon', state.content.dungeons || {});
+    state.content.dungeons[id] = {
+      id,
+      name: 'Новый данж',
+      requiredSize: 1,
+      passItemId: 'dungeon_pass',
+      startLocationId: 'start',
+      locations: {
+        start: { id: 'start', name: 'Вход', type: 'dungeon', exits: [], mobs: [], linear: true },
+      },
+      bossLocationId: 'start',
+    };
+    markDirty();
+    renderDungeons();
+    switchTab('dungeons');
+  });
   $('saveBtn').addEventListener('click', save);
   $('reloadBtn').addEventListener('click', () => {
     if (!state.dirty || confirm('Сбросить несохранённые изменения?')) loadContent();

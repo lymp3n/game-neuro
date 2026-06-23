@@ -21,6 +21,8 @@ import {
   statUpgradeCost,
   spellSlotCount,
   mobCombat,
+  rollDamage,
+  getFormulas,
 } from '../data/gameData.js';
 
 const TURN_DURATION_MS = 10000;
@@ -55,6 +57,7 @@ export class GameWorld {
     this.travelTimers = new Map();
     this.persistence = null;
     this._persistCounter = 0;
+    this.accounts = new Map();
 
     this.initLocations();
     setInterval(() => this.tick(), 1000);
@@ -78,6 +81,9 @@ export class GameWorld {
     if (!data?.id) return;
     const player = { ...data, ws: null };
     if (!player.stats) player.stats = Object.fromEntries(STATS.map((s) => [s, 0]));
+    if (player.tutorialCompleted === undefined) player.tutorialCompleted = false;
+    if (player.tutorialStep === undefined) player.tutorialStep = 0;
+    if (player.locationStationSec === undefined) player.locationStationSec = 0;
     this.normalizeSpellSlots(player);
     this.players.set(player.id, player);
   }
@@ -121,10 +127,19 @@ export class GameWorld {
         const regen = 1 + Math.floor(getEffectiveStats(player).spirit / 5);
         player.mana = Math.min(calcMaxMana(player), player.mana + regen);
       }
+
+      // Время на текущей локации (для агрессивных мобов).
+      if (!player.inBattle && !player.traveling) {
+        player.locationStationSec = (player.locationStationSec || 0) + 1;
+        this.processAggressiveMobs(player);
+      } else {
+        player.locationStationSec = 0;
+      }
     }
 
     for (const battle of this.battles.values()) {
       if (battle.status !== 'active') continue;
+      this.processBattleJoins(battle);
       this.processBattleTurn(battle, now);
     }
 
@@ -163,6 +178,10 @@ export class GameWorld {
       traveling: null,
       inDungeon: null,
       dungeonGroupId: null,
+      accountId: null,
+      tutorialCompleted: false,
+      tutorialStep: 0,
+      locationStationSec: 0,
       ws: null,
       ...extra,
     };
@@ -205,6 +224,62 @@ export class GameWorld {
       this.persistPlayer(player);
     }
     return player;
+  }
+
+  createAccount({ provider = 'demo', email, displayName } = {}) {
+    const id = uuid();
+    const account = {
+      id,
+      provider,
+      email: email || null,
+      displayName: displayName || 'Игрок',
+      characterIds: [],
+      createdAt: Date.now(),
+    };
+    this.accounts.set(id, account);
+    return account;
+  }
+
+  getAccount(accountId) {
+    return this.accounts.get(accountId) ?? null;
+  }
+
+  listAccountCharacters(accountId) {
+    const account = this.accounts.get(accountId);
+    if (!account) return [];
+    return account.characterIds
+      .map((pid) => this.players.get(pid))
+      .filter(Boolean)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        level: p.level,
+        locationId: p.locationId,
+        tutorialCompleted: p.tutorialCompleted,
+      }));
+  }
+
+  createCharacterForAccount(accountId, name) {
+    const account = this.accounts.get(accountId);
+    if (!account) return { error: 'Аккаунт не найден' };
+    if (account.characterIds.length >= 3) return { error: 'Максимум 3 персонажа на аккаунт' };
+    const trimmed = (name || '').trim();
+    if (!trimmed) return { error: 'Введите имя персонажа' };
+    if ([...this.players.values()].some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
+      return { error: 'Имя уже занято' };
+    }
+    const player = this.createPlayer(trimmed, { accountId, tutorialCompleted: false, tutorialStep: 0 });
+    account.characterIds.push(player.id);
+    this.persistPlayer(player);
+    return { player: this.serializePlayer(player) };
+  }
+
+  selectCharacter(accountId, playerId) {
+    const account = this.accounts.get(accountId);
+    if (!account || !account.characterIds.includes(playerId)) return { error: 'Персонаж не найден' };
+    const player = this.players.get(playerId);
+    if (!player) return { error: 'Персонаж не найден' };
+    return { playerId: player.id, name: player.name, tutorialCompleted: player.tutorialCompleted };
   }
 
   attachSession(playerId, ws) {
@@ -294,6 +369,8 @@ export class GameWorld {
       inDungeon: player.inDungeon,
       dungeonGroupId: player.dungeonGroupId,
       activeDebuffs: this.getActiveDebuffsFor(player.id),
+      tutorialCompleted: player.tutorialCompleted ?? false,
+      tutorialStep: player.tutorialStep ?? 0,
       locationView: state ? this.serializeLocation(locId, player.id) : null,
     };
   }
@@ -486,6 +563,76 @@ export class GameWorld {
     }
   }
 
+  processAggressiveMobs(player) {
+    const f = getFormulas();
+    const locId = player.inDungeon ? player.inDungeon.locationId : player.locationId;
+    const state = this.locationState[locId];
+    if (!state) return;
+
+    const aggressive = state.mobInstances.filter(
+      (m) => m.alive && MOBS[m.mobId]?.behaviorType === 'aggressive'
+    );
+    if (!aggressive.length) return;
+
+    for (const mobInst of aggressive) {
+      const force = player.locationStationSec >= f.aggressiveForceAfterSec;
+      const roll = Math.random() < f.aggressiveJoinChancePerSec;
+      if (force || roll) {
+        const res = this.startBattle(player.id, mobInst.instanceId);
+        if (!res?.error) {
+          player.locationStationSec = 0;
+          if (force) {
+            const battle = this.battles.get(player.inBattle);
+            if (battle) battle.log.push(`${MOBS[mobInst.mobId].name} нападает на вас!`);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  canMobJoinBattle(battle, mobId) {
+    const joining = MOBS[mobId]?.behaviorType || 'normal';
+    const starter = MOBS[battle.mobId]?.behaviorType || 'normal';
+    if (joining === 'aggressive') return true;
+    if (joining === 'collective' && starter === 'collective') return true;
+    return false;
+  }
+
+  mobJoinToBattle(battle, mobInst) {
+    if (battle.joinedInstances?.includes(mobInst.instanceId)) return false;
+    const mobTemplate = MOBS[mobInst.mobId];
+    if (!mobTemplate) return false;
+    if (!this.canMobJoinBattle(battle, mobInst.mobId)) return false;
+
+    const derived = mobCombat(mobTemplate).derived;
+    battle.mobHp += derived.maxHp;
+    battle.mobMaxHp += derived.maxHp;
+    battle.joinedInstances = battle.joinedInstances || [battle.mobInstanceId];
+    battle.joinedInstances.push(mobInst.instanceId);
+    battle.log.push(`${mobTemplate.name} вмешивается в бой! (+${derived.maxHp} HP)`);
+    this.sendToBattle(battle, { type: 'battle_update', data: this.serializeBattle(battle) });
+    return true;
+  }
+
+  processBattleJoins(battle) {
+    const f = getFormulas();
+    const state = this.locationState[battle.locationId];
+    if (!state) return;
+
+    for (const mobInst of state.mobInstances) {
+      if (!mobInst.alive) continue;
+      if (battle.joinedInstances?.includes(mobInst.instanceId)) continue;
+      if (mobInst.instanceId === battle.mobInstanceId) continue;
+      if (!this.canMobJoinBattle(battle, mobInst.mobId)) continue;
+
+      const behavior = MOBS[mobInst.mobId]?.behaviorType;
+      const chance =
+        behavior === 'collective' ? f.collectiveJoinChancePerSec : f.aggressiveJoinChancePerSec;
+      if (Math.random() < chance) this.mobJoinToBattle(battle, mobInst);
+    }
+  }
+
   startBattle(playerId, mobInstanceId) {
     const player = this.players.get(playerId);
     if (!player || player.inBattle) return { error: 'Уже в бою' };
@@ -520,6 +667,7 @@ export class GameWorld {
       mobActedThisTurn: false,
       mobActScheduled: false,
       combatants: { [playerId]: { debuffs: [] }, mob: { debuffs: [] } },
+      joinedInstances: [mobInstanceId],
     };
 
     this.battles.set(battle.id, battle);
@@ -588,8 +736,8 @@ export class GameWorld {
       if (!this.isMad(battle, pid)) continue;
       const action = this.randomMadAction(battle, pid);
       battle.log.push(`${this.unitName(battle, pid)} обезумел и действует неосознанно...`);
-      this.performAction(battle, pid, action);
-      battle.playerActions[pid] = action;
+      const result = this.performAction(battle, pid, action);
+      if (!result?.error) battle.playerActions[pid] = action;
       if (battle.mobHp <= 0) {
         this.endBattle(battle, true);
         return;
@@ -674,12 +822,21 @@ export class GameWorld {
     if (action.type === 'attack') {
       const attacker = this.combatEffStats(battle, actorId);
       const defender = this.combatEffStats(battle, 'mob');
-      const res = this.resolveDamage(attacker, defender, attacker.derived.physDamage, 'physical');
+      const style = action.attackStyle === 'ranged' ? 'ranged' : 'melee';
+      const rawBase =
+        style === 'ranged' ? attacker.derived.rangedDamage : attacker.derived.meleeDamage;
+      const spread =
+        style === 'ranged' ? attacker.derived.rangedDamageSpread : attacker.derived.meleeDamageSpread;
+      const raw = rollDamage(rawBase, spread);
+      const res = this.resolveDamage(attacker, defender, raw, 'physical');
+      const atkLabel = style === 'ranged' ? 'стреляет' : 'атакует';
       if (res.dodged) {
-        battle.log.push(`${battle.mobName} уклонился от атаки ${actorName}.`);
+        battle.log.push(`${battle.mobName} уклонился от ${atkLabel} ${actorName}.`);
       } else {
         battle.mobHp -= res.damage;
-        battle.log.push(`${actorName} атакует и наносит ${res.damage}${res.crit ? ' (крит!)' : ''} урона.`);
+        battle.log.push(
+          `${actorName} (${style === 'ranged' ? 'дальний' : 'ближний'}): ${res.damage}${res.crit ? ' (крит!)' : ''} урона.`
+        );
       }
     } else if (action.type === 'spell') {
       const player = this.players.get(actorId);
@@ -690,7 +847,23 @@ export class GameWorld {
       const attacker = this.combatEffStats(battle, actorId);
       if (spell.effect.damage) {
         const defender = this.combatEffStats(battle, 'mob');
-        const res = this.resolveDamage(attacker, defender, spell.effect.damage + attacker.derived.magDamage, spell.effect.type || 'magic');
+        const dmgType = spell.effect.type || 'magic';
+        let rawBase = spell.effect.damage;
+        let spread = attacker.derived.magicDamageSpread;
+        let armorKind = 'magic';
+        if (dmgType === 'magic') {
+          rawBase += attacker.derived.magDamage;
+        } else if (dmgType === 'physical_ranged' || dmgType === 'ranged') {
+          rawBase += attacker.derived.rangedDamage;
+          spread = attacker.derived.rangedDamageSpread;
+          armorKind = 'physical';
+        } else {
+          rawBase += attacker.derived.meleeDamage;
+          spread = attacker.derived.meleeDamageSpread;
+          armorKind = 'physical';
+        }
+        const raw = rollDamage(rawBase, spread);
+        const res = this.resolveDamage(attacker, defender, raw, armorKind);
         if (res.dodged) battle.log.push(`${battle.mobName} увернулся от «${spell.name}».`);
         else {
           battle.mobHp -= res.damage;
@@ -792,7 +965,24 @@ export class GameWorld {
 
     const attacker = this.combatEffStats(battle, 'mob');
     const defender = this.combatEffStats(battle, targetId);
-    const res = this.resolveDamage(attacker, defender, attacker.derived.physDamage, 'physical');
+    const mobTemplate = MOBS[battle.mobId];
+    const style = mobTemplate?.attackStyle || 'melee';
+    let rawBase, spread, kind;
+    if (style === 'magic') {
+      rawBase = attacker.derived.magDamage;
+      spread = attacker.derived.magicDamageSpread;
+      kind = 'magic';
+    } else if (style === 'ranged') {
+      rawBase = attacker.derived.rangedDamage;
+      spread = attacker.derived.rangedDamageSpread;
+      kind = 'physical';
+    } else {
+      rawBase = attacker.derived.meleeDamage;
+      spread = attacker.derived.meleeDamageSpread;
+      kind = 'physical';
+    }
+    const raw = rollDamage(rawBase, spread);
+    const res = this.resolveDamage(attacker, defender, raw, kind);
     if (res.dodged) {
       battle.log.push(`${target.name} уклоняется от атаки ${battle.mobName}.`);
       this.sendToBattle(battle, { type: 'battle_update', data: this.serializeBattle(battle) });
@@ -988,7 +1178,22 @@ export class GameWorld {
     return { success: true, player: this.serializePlayer(player) };
   }
 
-  // Тренировка в городе: раз в сутки временно поднимает характеристики.
+  setTutorialStep(playerId, step) {
+    const player = this.players.get(playerId);
+    if (!player) return { error: 'Игрок не найден' };
+    player.tutorialStep = Math.max(0, Math.floor(step || 0));
+    return { success: true, player: this.serializePlayer(player) };
+  }
+
+  completeTutorial(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return { error: 'Игрок не найден' };
+    player.tutorialCompleted = true;
+    player.tutorialStep = 0;
+    this.persistPlayer(player);
+    return { success: true, player: this.serializePlayer(player) };
+  }
+
   trainStat(playerId, stat) {
     const player = this.players.get(playerId);
     if (!player || !STATS.includes(stat)) return { error: 'Нельзя' };
@@ -1261,6 +1466,10 @@ export class GameWorld {
         return this.setStats(playerId, payload.stats);
       case 'train':
         return this.trainStat(playerId, payload.stat);
+      case 'tutorial_step':
+        return this.setTutorialStep(playerId, payload.step);
+      case 'tutorial_complete':
+        return this.completeTutorial(playerId);
       case 'learn_spell':
         return this.learnSpell(playerId, payload.spellId);
       case 'assign_spell':

@@ -21,6 +21,11 @@
         </div>
       </div>
       <div class="topbar-actions">
+        <nav class="admin-tabs">
+          <button type="button" id="tabWorld" class="tab-btn active">Мир</button>
+          <button type="button" id="tabFormulas" class="tab-btn">Формулы</button>
+          <button type="button" id="tabDungeons" class="tab-btn">Данжи</button>
+        </nav>
         <span id="status" class="status">Загрузка…</span>
         <button id="reloadBtn" class="btn btn-ghost">
           <span class="material-icons">refresh</span> Сбросить
@@ -31,6 +36,7 @@
       </div>
     </header>
 
+    <div id="panelWorld" class="admin-panel">
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-header">
@@ -63,6 +69,26 @@
           <div id="nodes" class="nodes"></div>
         </div>
       </main>
+    </div>
+    </div>
+
+    <div id="panelFormulas" class="admin-panel hidden">
+      <div class="panel-inner">
+        <h2>Таблица формул баланса</h2>
+        <p class="hint">Изменения применяются после «Сохранить и применить». Влияют на HP, урон, защиты и поведение мобов.</p>
+        <div id="formulasTable" class="formulas-table"></div>
+      </div>
+    </div>
+
+    <div id="panelDungeons" class="admin-panel hidden">
+      <div class="panel-inner">
+        <h2>Редактор подземелий</h2>
+        <p class="hint">Каждый данж — цепочка локаций с мобами. Последняя локация — босс.</p>
+        <button id="addDungeonBtn" class="btn btn-secondary" type="button">
+          <span class="material-icons">add</span> Новый данж
+        </button>
+        <div id="dungeonList" class="dungeon-list"></div>
+      </div>
     </div>
 
     <!-- Location editor modal -->
@@ -129,6 +155,22 @@
             <label>Удача<input id="stat_luck" type="number" min="0" value="0" class="mob-stat" /></label>
           </div>
           <p id="mobDerivedHint" class="hint"></p>
+          <div class="grid2">
+            <label>Тип поведения
+              <select id="mobBehavior">
+                <option value="normal">Обычный</option>
+                <option value="aggressive">Агрессивный</option>
+                <option value="collective">Коллективный</option>
+              </select>
+            </label>
+            <label>Стиль атаки
+              <select id="mobAttackStyle">
+                <option value="melee">Ближний</option>
+                <option value="ranged">Дальний</option>
+                <option value="magic">Магический</option>
+              </select>
+            </label>
+          </div>
           <label>Иконка (Material Icons)
             <input id="mobIcon" type="text" placeholder="smart_toy" />
           </label>
